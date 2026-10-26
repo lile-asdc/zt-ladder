@@ -267,19 +267,52 @@ def _stock_kline(code: str, count: int = 320) -> list[list[str]]:
     return rows
 
 
+def _stock_kline_em(code: str, date: str) -> list[list[str]]:
+    """东财日 K 兜底（腾讯取不到时用）。返回 [date, '', close] 结构，与腾讯保持一致。"""
+    secid = ("0." if code[0] in "03" else "1.") + code
+    d = datetime.strptime(date, "%Y%m%d")
+    beg = (d - timedelta(days=20)).strftime("%Y%m%d")
+    url = (
+        "http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s"
+        "&klt=101&fqt=1&beg=%s&end=%s&fields1=f1,f2,f3&fields2=f51,f53" % (secid, beg, date)
+    )
+    try:
+        data = (_get_json(url, "http://quote.eastmoney.com/", retries=2).get("data")) or {}
+    except SourceError:
+        return []
+    rows: list[list[str]] = []
+    for line in data.get("klines") or []:
+        parts = line.split(",")
+        if len(parts) >= 2:
+            rows.append([parts[0], "", parts[1]])
+    return rows
+
+
+def _lookup_pct(rows: list[list[str]], target: str) -> tuple[float, float] | None:
+    if not rows:
+        return None
+    idx = next((i for i, r in enumerate(rows) if r[0] == target), None)
+    if idx is None or idx == 0:
+        return None
+    try:
+        close = float(rows[idx][2])
+        prev = float(rows[idx - 1][2])
+    except (TypeError, ValueError):
+        return None
+    return close, prev
+
+
 def fetch_quotes_hist(codes: list[str], date: str) -> dict[str, dict]:
     """历史日期用日 K 补「昨日连板股今天」的收盘涨跌幅（实时接口只给当天）。"""
     target = f"{date[:4]}-{date[4:6]}-{date[6:]}"
     out: dict[str, dict] = {}
     for code in dict.fromkeys(codes):
-        rows = _stock_kline(code)
-        if not rows:
+        found = _lookup_pct(_stock_kline(code), target)
+        if found is None:  # 腾讯挂了就用东财兜底
+            found = _lookup_pct(_stock_kline_em(code, date), target)
+        if found is None:
             continue
-        idx = next((i for i, r in enumerate(rows) if r[0] == target), None)
-        if idx is None or idx == 0:
-            continue
-        close = float(rows[idx][2])
-        prev = float(rows[idx - 1][2])
+        close, prev = found
         out[code] = {
             "price": round(close, 2),
             "pct": round((close / prev - 1) * 100, 2) if prev else None,

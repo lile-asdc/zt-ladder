@@ -19,12 +19,12 @@ import payload as pl
 
 def cmd_day(date: str, *, quiet: bool = False) -> bool:
     if not em.is_trading_day(date):
-        # 日历偶尔滞后（比如当天收盘前后），用涨停池兜底判断
+        # 日历偶尔滞后（比如当天收盘前后），用涨停池兜底：必须确认池子确实属于这一天
         today = datetime.now(em.CST).strftime("%Y%m%d")
         has_pool = False
         if date == today:
             try:
-                has_pool = bool(em.fetch_zt_pool(date))
+                has_pool = bool(em.fetch_zt_pool(date)) and em.pool_qdate("ZT", date) == date
             except em.SourceError:
                 has_pool = False
         if not has_pool:

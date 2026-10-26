@@ -1,1 +1,73 @@
-# zt-ladder
+# 连板天梯 · 每日涨停复盘
+
+每个交易日收盘后自动抓取 A 股涨停 / 炸板数据，生成一张深蓝科技风的「连板天梯」长图，并发布成一个可在手机浏览器打开的网页（PWA，可加到桌面）。
+
+> 线上地址：`https://<你的用户名>.github.io/zt-ladder/`（首次部署后自动生成）
+>
+> 数据来自东方财富、同花顺的公开接口，仅供复盘参考，**不构成任何投资建议**。
+
+## 长什么样
+
+- 网页：暗色科技风，桌面 8 栏 / 平板 6 栏 / 手机 3 栏；点个股看详情，支持搜索、板块筛选、历史日期切换、下载长图
+- 长图：`public/figures/YYYY-MM-DD.png`，1125 宽竖版，可直接发微信群
+
+## 怎么自动更新的
+
+`.github/workflows/daily.yml` 在每个交易日 **北京时间 15:35 和 16:10** 各跑一次：
+
+1. `python build/cli.py daily` —— 抓涨停池 / 炸板池 / 涨停原因，生成当日 JSON 与长图
+2. 把 `public/` 的改动提交回仓库
+3. 用 GitHub Pages 发布
+
+非交易日会自动跳过；重复执行只会覆盖当天数据，不会出错。
+
+手动跑一次：仓库 → Actions → 「连板天梯 · 每日更新」→ Run workflow。
+
+## 目录
+
+```
+public/                 ← 站点根目录（Pages 发布的就是它）
+  index.html            页面
+  styles.css / app.js   样式与交互
+  data/                 每日 JSON + index.json
+  figures/              每日长图
+  icons/ manifest / sw  PWA
+build/
+  em.py                 数据源适配（东财涨停池、炸板池，同花顺题材，指数，涨跌家数）
+  payload.py            组装一天的天梯数据
+  png.py                长图渲染（Pillow）
+  cli.py                命令行：daily / day / backfill / png / index
+  serve.py              本地预览服务
+.github/workflows/      每日自动更新
+```
+
+## 数据口径
+
+| 字段 | 来源 | 说明 |
+| --- | --- | --- |
+| 涨停股 | 东方财富涨停池 | 收盘封板的个股，含连板数、封板时间 |
+| 炸板股 | 昨日涨停池 + 当日行情 | 昨日 ≥2 板、今天没封住的，按「今日冲击高度」排在对应行，灰色划线 |
+| 一字板 | 同花顺涨停类型 | 兼用「首封 ≤ 09:30 且未开板」兜底 |
+| 板块 | 东方财富行业 | 如「通用设备」「汽车零部」 |
+| 涨停原因 | 同花顺题材 | 点「题材」按钮展开 |
+| 指数 / 涨跌家数 | 东方财富、新浪、腾讯 | 历史日期用日 K 补收盘 |
+
+东方财富涨停池只保留最近约 20 个交易日，所以历史能回看约 3～4 周。
+
+## 本地跑
+
+```bash
+pip install -r requirements.txt
+python build/cli.py daily          # 抓当天 + 出图
+python build/cli.py backfill --days 30
+python build/serve.py --open       # http://127.0.0.1:8765
+```
+
+Windows 下也可以直接双击 `start.cmd` / `update-now.cmd`，或用 `install-task.ps1` 注册本机计划任务（不依赖 GitHub 的跑法）。
+
+## 已知边界
+
+- 只有交易日有数据；周末、节假日跳过
+- 历史窗口约 20 个交易日（数据源限制）
+- 炸板股只收 2 板及以上（和常见天梯图口径一致）
+- 涨跌家数为沪深全市场（不含北交所），个别日子与其它平台可能差 1～2 家

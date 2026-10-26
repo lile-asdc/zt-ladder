@@ -1,0 +1,15 @@
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+work/
+edgeone-token.txt
+.localappdata/
+.npm-cache/
+
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  

@@ -35,19 +35,20 @@ jobs:
 
       - name: 准备中文字体
         run: |
+          # runner 通常自带 Noto CJK，先用系统的，避免每次依赖外网
+          if ls /usr/share/fonts/opentype/noto/NotoSansCJK*.ttc >/dev/null 2>&1; then
+            echo "系统自带 Noto CJK，跳过下载"
+            exit 0
+          fi
           mkdir -p fonts
           base="https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese"
-          fetch() {
-            [ -s "$2" ] && return 0
-            curl -fsSL --retry 2 --max-time 90 -o "$2" "$1" && return 0
-            rm -f "$2"
-            return 1
-          }
-          fetch "$base/NotoSansSC-Bold.otf" fonts/NotoSansSC-Bold.otf || true
-          fetch "$base/NotoSansSC-Regular.otf" fonts/NotoSansSC-Regular.otf || true
+          for name in NotoSansSC-Bold.otf NotoSansSC-Regular.otf; do
+            [ -s "fonts/$name" ] && continue
+            timeout 40 curl -fsSL -o "fonts/$name" "$base/$name" || rm -f "fonts/$name"
+          done
           if [ ! -s fonts/NotoSansSC-Bold.otf ]; then
-            echo "::warning::字体下载失败，改用系统字体"
-            sudo apt-get install -y --no-install-recommends fonts-noto-cjk || true
+            echo "::warning::字体下载失败，尝试安装系统字体"
+            timeout 150 sudo apt-get install -y --no-install-recommends fonts-noto-cjk || true
           fi
           ls -la fonts
 

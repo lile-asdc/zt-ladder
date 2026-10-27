@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import analytics
 import em
 import payload as pl
 
@@ -37,6 +38,7 @@ def cmd_day(date: str, *, quiet: bool = False) -> bool:
             print(f"[skip] {date} 无涨停数据")
         return False
     path = pl.save_day(data)
+    analytics.apply_all(pl.DATA_DIR)
     pl.rebuild_index()
     if not quiet:
         stats = data["stats"]
@@ -124,6 +126,7 @@ def main(argv=None) -> int:
 
     sub.add_parser("daily", help="每日任务：抓当天 + 生成长图 + 刷新索引")
     sub.add_parser("index", help="仅重建索引")
+    sub.add_parser("analytics", help="重算全部历史日的复盘指标（不联网）")
 
     p_png = sub.add_parser("png", help="生成某天长图")
     p_png.add_argument("--date", default=None)
@@ -140,6 +143,11 @@ def main(argv=None) -> int:
         return 0
     if args.cmd == "index":
         print(pl.rebuild_index())
+        return 0
+    if args.cmd == "analytics":
+        count = analytics.apply_all(pl.DATA_DIR)
+        pl.rebuild_index()
+        print(f"已重算 {count} 个交易日")
         return 0
     if args.cmd == "png":
         import png

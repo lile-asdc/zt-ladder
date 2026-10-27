@@ -10,6 +10,7 @@
     query: "",
     sectors: new Set(),
     showReason: false,
+    timeline: false,
     installPrompt: null,
   };
 
@@ -208,7 +209,10 @@
   function render(data) {
     renderHeader(data);
     renderChips(data);
+    renderInsights(data);
     renderLadder(data);
+    markLeaders(data);
+    renderTimeline(data);
     renderMeta(data);
     $("#empty").hidden = true;
     document.body.classList.toggle("show-reason", state.showReason);
@@ -216,6 +220,171 @@
     syncDateControls();
     checkPng(data.date);
     prefetchNeighbours();
+  }
+
+  /* ------------------------------------------------------------ 复盘面板 */
+  function renderInsights(data) {
+    const box = $("#insights");
+    const promo = data.promotion || [];
+    if (!data.summary && !promo.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    $("#summaryLine").textContent = data.summary || "";
+
+    const ul = $("#promoteList");
+    ul.textContent = "";
+    promo.slice(0, 5).forEach((p) => {
+      const li = el("li", { title: `${p.promoted}/${p.total} 只晋级` });
+      li.append(el("span", { text: `${p.base}进${p.base + 1}` }));
+      const bar = el("span", { class: "bar" });
+      const fill = el("i");
+      fill.style.width = `${Math.max(2, Math.min(100, p.rate))}%`;
+      bar.append(fill);
+      li.append(bar);
+      li.append(el("b", { text: `${p.rate}%` }));
+      ul.append(li);
+    });
+    if (!promo.length) ul.append(el("li", { text: "暂无昨日数据" }));
+
+    // 近 10 日首板晋级率迷你折线
+    const spark = $("#promoteTrend");
+    spark.textContent = "";
+    const trend = (data.trend || []).map((t) => ({ date: t.date, v: t.promote2 }));
+    if (trend.filter((t) => t.v != null).length >= 2) {
+      spark.append(sparkSvg(trend, "首板晋级率"));
+    }
+
+    const heat = $("#heatList");
+    heat.textContent = "";
+    const maxHeat = Math.max(...(data.sectorHeat || []).map((s) => s.heat), 1);
+    (data.sectorHeat || []).slice(0, 6).forEach((s) => {
+      const li = el("li", { title: `${s.count} 家 · 最高 ${s.maxBoard} 板 · 封单 ${s.sealSum} 亿` });
+      const line = el("div", { class: "h-line" });
+      line.append(el("span", { text: s.name }), el("b", { text: `${s.count}家·${s.maxBoard}板` }));
+      const bar = el("div", { class: "h-bar" });
+      const fill = el("i");
+      fill.style.width = `${Math.max(4, (s.heat / maxHeat) * 100)}%`;
+      bar.append(fill);
+      li.append(line, bar);
+      li.addEventListener("click", () => {
+        state.sectors.clear();
+        state.sectors.add(s.name);
+        renderChips(state.data);
+        applyFilter();
+      });
+      heat.append(li);
+    });
+
+    const chips = $("#themeChips");
+    chips.textContent = "";
+    (data.themes || []).slice(0, 8).forEach((t) => {
+      const btn = el("button", { class: "theme-chip", type: "button", title: t.stocks.join("、") });
+      btn.append(document.createTextNode(t.name), el("b", { text: String(t.count) }));
+      btn.addEventListener("click", () => {
+        const active = btn.getAttribute("aria-pressed") === "true";
+        document.querySelectorAll(".theme-chip").forEach((b) => b.setAttribute("aria-pressed", "false"));
+        btn.setAttribute("aria-pressed", String(!active));
+        state.query = active ? "" : t.name;
+        $("#search").value = state.query;
+        applyFilter();
+      });
+      chips.append(btn);
+    });
+    if (!(data.themes || []).length) chips.append(el("span", { class: "hint", text: "今日没有明显聚集的题材" }));
+
+    renderDiff(data.yesterdayDiff);
+  }
+
+  function sparkSvg(points, label) {
+    const w = 260;
+    const h = 34;
+    const pad = 4;
+    const vals = points.map((p) => p.v).filter((v) => v != null);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const span = max - min || 1;
+    const step = (w - pad * 2) / Math.max(points.length - 1, 1);
+    const coords = points.map((p, i) => {
+      const v = p.v == null ? min : p.v;
+      return [pad + i * step, h - pad - ((v - min) / span) * (h - pad * 2)];
+    });
+    const line = coords.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+    const area = `${line} L${coords[coords.length - 1][0].toFixed(1)},${h} L${coords[0][0].toFixed(1)},${h} Z`;
+    const last = vals[vals.length - 1];
+
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.innerHTML = `
+      <path d="${area}" fill="rgba(56,214,255,0.12)" />
+      <path d="${line}" fill="none" stroke="#38d6ff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
+      <circle cx="${coords[coords.length - 1][0].toFixed(1)}" cy="${coords[coords.length - 1][1].toFixed(1)}" r="2.2" fill="#38d6ff" />
+      <text x="2" y="10">${label} ${last}%</text>
+    `;
+    return svg;
+  }
+
+  function renderDiff(diff) {
+    const box = $("#diffCols");
+    box.textContent = "";
+    if (!diff) {
+      box.append(el("span", { text: "暂无昨日数据" }));
+      return;
+    }
+    const cols = [
+      ["晋级", diff.promoted || [], "up", (x) => `${x.name} ${x.from}→${x.to}`],
+      ["掉队", diff.dropped || [], "down", (x) => `${x.name} ${x.pct == null ? "" : fmtPct(x.pct)}`],
+      ["新进首板", diff.fresh || [], "", (x) => x.name],
+    ];
+    cols.forEach(([title, items, cls, label]) => {
+      const wrap = el("div");
+      wrap.append(el("h4", { text: `${title}（${items.length}）` }));
+      const list = el("div", { class: "c" });
+      items.slice(0, 40).forEach((item) => {
+        const btn = el("button", { class: `pill ${cls}`.trim(), type: "button" });
+        btn.textContent = label(item);
+        btn.addEventListener("click", () => {
+          const stock = findStock(item.code);
+          if (stock) openSheet(stock);
+        });
+        list.append(btn);
+      });
+      wrap.append(list);
+      box.append(wrap);
+    });
+  }
+
+  function markLeaders(data) {
+    const lead = data.leaders || {};
+    const codes = new Set();
+    if (lead.maxBoard) codes.add(lead.maxBoard.code);
+    if (lead.sealKing) codes.add(lead.sealKing.code);
+    (lead.oneWord || []).forEach((s) => codes.add(s.code));
+    document.querySelectorAll(".stk").forEach((cell) => {
+      cell.classList.toggle("is-leader", codes.has(cell.dataset.code));
+    });
+  }
+
+  function renderTimeline(data) {
+    const box = $("#timeline");
+    box.textContent = "";
+    const items = [];
+    data.rows.forEach((r) => r.stocks.forEach((s) => items.push({ ...s, height: r.height })));
+    items.sort((a, b) => (a.firstTime || a.lastTime || "99:99").localeCompare(b.firstTime || b.lastTime || "99:99"));
+    items.forEach((s) => {
+      const row = el("button", { class: "tl-row", type: "button", "data-code": s.code });
+      row.append(el("span", { class: "tl-time", text: s.broken ? "炸板" : s.firstTime || s.lastTime || "--" }));
+      const name = el("span", { class: "tl-name", text: s.name });
+      if (s.broken) name.append(el("small", { text: fmtPct(s.pct) }));
+      row.append(name);
+      row.append(el("span", { class: "tl-b", text: s.height === 1 ? "首板" : `${s.height}板` }));
+      row.append(el("span", { class: "tl-sec", text: s.sector || "" }));
+      row.addEventListener("click", () => openSheet(s));
+      box.append(row);
+    });
   }
 
   /* ------------------------------------------------------------ 筛选 */
@@ -244,6 +413,15 @@
       });
       rung.hidden = shown === 0;
       rung.classList.toggle("is-empty", shown === 0);
+    });
+
+    document.querySelectorAll(".tl-row").forEach((row) => {
+      const stock = findStock(row.dataset.code);
+      const hay = stock
+        ? `${stock.name}${stock.code}${stock.sector}${stock.reason || ""}`.toLowerCase()
+        : "";
+      const ok = (!q || hay.includes(q)) && (!sectors.size || (stock && sectors.has(stock.sector)));
+      row.hidden = !ok;
     });
 
     $("#empty").hidden = visible !== 0 || total === 0;
@@ -390,6 +568,14 @@
       state.showReason = !state.showReason;
       e.currentTarget.setAttribute("aria-pressed", String(state.showReason));
       document.body.classList.toggle("show-reason", state.showReason);
+    });
+
+    $("#viewToggle").addEventListener("click", (e) => {
+      state.timeline = !state.timeline;
+      e.currentTarget.setAttribute("aria-pressed", String(state.timeline));
+      $("#ladder").hidden = state.timeline;
+      $("#timeline").hidden = !state.timeline;
+      applyFilter();
     });
 
     document.addEventListener("keydown", (e) => {

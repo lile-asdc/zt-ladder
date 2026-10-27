@@ -52,6 +52,7 @@
         <input id="search" type="search" inputmode="search" placeholder="搜代码 / 名称 / 板块" autocomplete="off">
       </label>
       <button class="tool-btn" id="reasonToggle" type="button" aria-pressed="false" title="显示涨停原因">题材</button>
+      <button class="tool-btn" id="viewToggle" type="button" aria-pressed="false" title="切换时间轴视图">时间轴</button>
       <a class="tool-btn" id="pngLink" href="#" download hidden>长图</a>
     </div>
   </div>
@@ -62,7 +63,32 @@
 
   <p class="meta-line" id="metaLine"></p>
 
+  <section class="insights" id="insights" hidden>
+    <p class="summary-line" id="summaryLine"></p>
+    <div class="insight-grid">
+      <div class="card">
+        <h3>晋级率<em>昨日 N 板 → 今日晋级</em></h3>
+        <ul class="promote" id="promoteList"></ul>
+        <div class="spark" id="promoteTrend"></div>
+      </div>
+      <div class="card">
+        <h3>板块热度<em>家数 × 高度 × 封单</em></h3>
+        <ol class="heat" id="heatList"></ol>
+      </div>
+      <div class="card">
+        <h3>今日主线<em>涨停原因聚类</em></h3>
+        <div class="theme-chips" id="themeChips"></div>
+      </div>
+    </div>
+    <details class="diff" id="diffBox">
+      <summary>昨日对比 · 晋级 / 掉队 / 新进</summary>
+      <div class="diff-cols" id="diffCols"></div>
+    </details>
+  </section>
+
   <main class="ladder" id="ladder" aria-live="polite"></main>
+
+  <div class="timeline" id="timeline" hidden></div>
 
   <p class="empty" id="empty" hidden>没有符合条件的个股，换个关键词试试。</p>
 

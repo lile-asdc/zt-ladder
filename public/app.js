@@ -11,6 +11,9 @@
     sectors: new Set(),
     showReason: false,
     timeline: false,
+    view: "ladder",
+    lhb: null,
+    lhbDate: null,
     installPrompt: null,
   };
 
@@ -220,6 +223,12 @@
     syncDateControls();
     checkPng(data.date);
     prefetchNeighbours();
+    if (state.view === "review") renderReview(data, state.index);
+    if (state.view === "lhb") {
+      state.lhb = null;
+      state.lhbDate = null;
+      loadLhb();
+    }
   }
 
   /* ------------------------------------------------------------ 复盘面板 */
@@ -322,7 +331,6 @@
       <path d="${area}" fill="rgba(56,214,255,0.12)" />
       <path d="${line}" fill="none" stroke="#38d6ff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
       <circle cx="${coords[coords.length - 1][0].toFixed(1)}" cy="${coords[coords.length - 1][1].toFixed(1)}" r="2.2" fill="#38d6ff" />
-      <text x="2" y="10">${label} ${last}%</text>
     `;
     return svg;
   }
@@ -788,8 +796,233 @@
     document.body.style.overflow = "";
   }
 
+  /* ------------------------------------------------------------ 视图切换 */
+  function switchView(name) {
+    state.view = name;
+    document.querySelectorAll(".tab").forEach((t) => {
+      t.setAttribute("aria-selected", String(t.dataset.view === name));
+    });
+    ["ladder", "review", "lhb"].forEach((v) => {
+      document.getElementById(`view-${v}`).hidden = v !== name;
+    });
+    document.body.classList.toggle("view-ladder", name === "ladder");
+    if (name === "review" && state.data) renderReview(state.data, state.index);
+    if (name === "lhb") loadLhb();
+  }
+
+  /* ------------------------------------------------------------ 复盘看板 */
+  const fmtWan = (v) => {
+    if (v === null || v === undefined) return "—";
+    const n = Number(v);
+    if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(2)} 亿`;
+    return `${n.toFixed(0)} 万`;
+  };
+
+  function renderReview(data, index) {
+    if (!data) return;
+
+    // 情绪温度计
+    const emo = data.emotion || {};
+    $("#emotionScore").textContent = emo.score ?? "—";
+    $("#emotionLabel").textContent = emo.label || "";
+    const parts = $("#emotionParts");
+    parts.textContent = "";
+    Object.entries(emo.parts || {}).forEach(([k, v]) => {
+      const wrap = el("div", { class: "p" });
+      wrap.append(document.createTextNode(`${k} ${v}`));
+      const bar = el("i");
+      const fill = el("b");
+      fill.style.width = `${Math.max(2, Math.min(100, v))}%`;
+      bar.append(fill);
+      wrap.append(bar);
+      parts.append(wrap);
+    });
+    const chart = $("#emotionChart");
+    chart.textContent = "";
+    const series = (data.emotionTrend || []).map((t) => ({ date: t.date, v: t.score }));
+    if (series.length >= 2) chart.append(sparkSvg(series, "情绪分"));
+
+    // 高度分布
+    const hc = $("#heightChart");
+    hc.textContent = "";
+    const maxTotal = Math.max(...(data.heightDist || []).map((h) => h.sealed + h.broken), 1);
+    (data.heightDist || []).forEach((h) => {
+      const row = el("div", { class: "hrow" });
+      row.append(el("span", { text: h.height === 1 ? "首板" : `${h.height}板` }));
+      const track = el("span", { class: "track" });
+      const sBar = el("i", { class: "s" });
+      sBar.style.width = `${(h.sealed / maxTotal) * 100}%`;
+      const bBar = el("i", { class: "b" });
+      bBar.style.width = `${(h.broken / maxTotal) * 100}%`;
+      track.append(sBar, bBar);
+      row.append(track);
+      const n = el("span", { class: "n", text: `${h.sealed}` });
+      if (h.broken) n.append(el("span", { class: "prev", text: ` +${h.broken}炸` }));
+      row.append(n);
+      hc.append(row);
+    });
+
+    // 龙头梯队
+    const tree = $("#ladderTree");
+    tree.textContent = "";
+    (data.rows || []).slice(0, 7).forEach((row) => {
+      const line = el("div", { class: "lt-row" });
+      line.append(el("span", { class: "lt-h", text: row.height === 1 ? "首板" : `${row.height}板` }));
+      const names = el("div", { class: "lt-names" });
+      row.stocks.slice(0, 12).forEach((s) => {
+        names.append(el("span", { class: `lt-chip${s.broken ? " is-broken" : ""}`, text: s.name }));
+      });
+      if (row.stocks.length > 12) names.append(el("span", { class: "lt-chip", text: `+${row.stocks.length - 12}` }));
+      line.append(names);
+      tree.append(line);
+    });
+
+    // 炸板复盘
+    const br = data.brokenReview || {};
+    const bc = $("#brokenChart");
+    bc.textContent = "";
+    const maxBucket = Math.max(...(br.buckets || []).map((b) => b.count), 1);
+    (br.buckets || []).forEach((b) => {
+      const bar = el("div", { class: "bbar" });
+      const fill = el("i");
+      fill.style.height = `${Math.max(4, (b.count / maxBucket) * 60)}px`;
+      const label = b.label.replace("-", "~").replace(":00", "");
+      bar.append(el("span", { class: "bnum", text: String(b.count) }), fill, el("span", { class: "btime", text: label }));
+      bar.title = `${b.label} 炸板 ${b.count} 家`;
+      bc.append(bar);
+    });
+    const bl = $("#brokenList");
+    bl.textContent = "";
+    (br.list || []).slice(0, 14).forEach((s) => {
+      bl.append(el("li", { text: `${s.name} ${fmtPct(s.pct)}` }));
+    });
+
+    // 强首板池
+    const sl = $("#strongList");
+    sl.textContent = "";
+    (data.strongFirst || []).forEach((s) => {
+      const li = el("li");
+      li.append(el("span", { class: "idx", text: String(sl.children.length + 1) }));
+      li.append(el("span", { class: "nm", text: s.name }));
+      li.append(el("span", { class: "meta", text: `${s.sector || ""} · ${s.time || ""}` }));
+      li.append(el("span", { class: "sc", text: String(s.score) }));
+      li.addEventListener("click", () => {
+        const stock = findStock(s.code);
+        if (stock) openSheet(stock);
+      });
+      sl.append(li);
+    });
+
+    // 板块轮动
+    const rot = $("#rotationGrid");
+    rot.textContent = "";
+    const days = (data.rotation && data.rotation[0] && data.rotation[0].counts.length) || 5;
+    rot.append(el("span", { class: "nm", text: "" }));
+    const recent = ((index && index.days) || []).slice(0, days).reverse();
+    for (let i = 0; i < days; i += 1) {
+      const d = recent[i];
+      rot.append(el("span", { class: "h", text: d ? d.date.slice(5) : `-${days - i}` }));
+    }
+    const maxCell = Math.max(...(data.rotation || []).flatMap((r) => r.counts), 1);
+    (data.rotation || []).forEach((r) => {
+      rot.append(el("span", { class: "nm", text: r.name }));
+      r.counts.forEach((c) => {
+        const cell = el("span", { class: "cell", text: c ? String(c) : "" });
+        const alpha = c ? 0.15 + (c / maxCell) * 0.65 : 0;
+        cell.style.background = c ? `rgba(56, 214, 255, ${alpha.toFixed(2)})` : "transparent";
+        if (c >= maxCell * 0.8) cell.style.color = "#04121f";
+        rot.append(cell);
+      });
+    });
+
+    // 月度热力
+    const cal = $("#calendar");
+    cal.textContent = "";
+    const daysList = ((index && index.days) || []).slice(0, 35).reverse();
+    const maxSealed = Math.max(...daysList.map((d) => d.sealed || 0), 1);
+    daysList.forEach((d) => {
+      const level = Math.min(4, Math.ceil(((d.sealed || 0) / maxSealed) * 4));
+      const cell = el("span", { class: `d l${level}`, title: `${d.date} 涨停 ${d.sealed} 家` });
+      if (d.date === (state.data && state.data.date)) cell.classList.add("on");
+      cal.append(cell);
+    });
+  }
+
+  /* ------------------------------------------------------------ 龙虎榜 */
+  async function loadLhb() {
+    const date = state.date;
+    const box = $("#lhbList");
+    if (!date) return;
+    if (state.lhbDate === date && state.lhb) {
+      renderLhb(state.lhb);
+      return;
+    }
+    box.textContent = "加载中…";
+    try {
+      const res = await fetch(`data/lhb/${date}.json`, { cache: "no-cache" });
+      if (!res.ok) throw new Error("no data");
+      state.lhb = await res.json();
+      state.lhbDate = date;
+      renderLhb(state.lhb);
+    } catch {
+      state.lhb = null;
+      state.lhbDate = date;
+      box.textContent = "这一天还没有龙虎榜数据（交易所盘后披露，约 18:00 后生成）。";
+    }
+  }
+
+  function renderLhb(payload) {
+    const box = $("#lhbList");
+    box.textContent = "";
+    const stocks = payload.stocks || [];
+    if (!stocks.length) {
+      box.textContent = "当天没有龙虎榜个股。";
+      return;
+    }
+    const totalNet = stocks.reduce((sum, s) => sum + (s.net || 0), 0);
+    $("#lhbMeta").textContent = `${payload.date} 共 ${stocks.length} 家上榜 · 净买入合计 ${fmtWan(totalNet)} · 点击任意一行看买卖席位`;
+
+    stocks.forEach((s) => {
+      const wrap = el("div", { class: "lhb-row" });
+      const head = el("button", { class: "lhb-head-row", type: "button" });
+
+      const name = el("span", { class: "lhb-name" });
+      name.append(document.createTextNode(s.name), el("small", { text: s.code }));
+      head.append(name);
+      head.append(el("span", { class: `lhb-pct ${s.pct >= 0 ? "up" : "down"}`, text: fmtPct(s.pct) }));
+      head.append(el("span", { class: `lhb-net ${s.net >= 0 ? "in" : "out"}`, text: fmtWan(s.net) }));
+      head.append(el("span", { class: "lhb-amt", text: `成交 ${fmtWan(s.amount)}` }));
+      head.append(el("span", { class: "lhb-why", text: s.reason || "" }));
+
+      const seats = el("div", { class: "lhb-seats", hidden: true });
+      const build = (title, rows, pick) => {
+        const col = el("div", { class: "seat-col" });
+        col.append(el("h4", { text: title }));
+        (rows || []).forEach((seat) => {
+          const r = el("div", { class: "seat-row" });
+          r.append(el("span", { text: seat[0] }));
+          r.append(el("b", { text: fmtWan(seat[pick]) }));
+          col.append(r);
+        });
+        if (!(rows || []).length) col.append(el("div", { class: "seat-row", text: "无席位数据" }));
+        return col;
+      };
+      seats.append(build("买入前五", s.seats && s.seats.b, 3), build("卖出前五", s.seats && s.seats.s, 2));
+
+      head.addEventListener("click", () => {
+        seats.hidden = !seats.hidden;
+      });
+
+      wrap.append(head, seats);
+      box.append(wrap);
+    });
+  }
+
   /* ------------------------------------------------------------ 事件绑定 */
   function bind() {
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => switchView(tab.dataset.view));
+    });
     $("#prevDay").addEventListener("click", () => step(-1));
     $("#nextDay").addEventListener("click", () => step(1));
     $("#dateSelect").addEventListener("change", (e) => goto(e.target.value));

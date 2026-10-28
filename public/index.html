@@ -57,6 +57,13 @@
     </div>
   </div>
 
+  <nav class="tabs" role="tablist">
+    <button class="tab" type="button" data-view="ladder" aria-selected="true">连板天梯</button>
+    <button class="tab" type="button" data-view="review" aria-selected="false">复盘看板</button>
+    <button class="tab" type="button" data-view="lhb" aria-selected="false">龙虎榜</button>
+  </nav>
+
+  <section id="view-ladder">
   <h1 class="board-title"><span id="titleDate">10月26日</span> 连板天梯</h1>
 
   <div class="chips" id="chips" role="group" aria-label="板块筛选"></div>
@@ -91,6 +98,55 @@
   <div class="timeline" id="timeline" hidden></div>
 
   <p class="empty" id="empty" hidden>没有符合条件的个股，换个关键词试试。</p>
+
+  </section>
+
+  <section id="view-review" hidden>
+    <div class="panel-grid">
+      <div class="pcard p-emotion">
+        <h3>情绪温度计<em>涨停×封板率×晋级×高度</em></h3>
+        <div class="gauge"><b id="emotionScore">—</b><span id="emotionLabel"></span></div>
+        <div class="parts" id="emotionParts"></div>
+        <div class="spark" id="emotionChart"></div>
+      </div>
+
+      <div class="pcard">
+        <h3>连板高度分布<em>封住 / 炸板 / 昨日</em></h3>
+        <div class="hbars" id="heightChart"></div>
+      </div>
+
+      <div class="pcard">
+        <h3>龙头梯队<em>按今日高度分层</em></h3>
+        <div class="ladder-tree" id="ladderTree"></div>
+      </div>
+
+      <div class="pcard">
+        <h3>炸板复盘<em>盘中封过又打开</em></h3>
+        <div class="bbars" id="brokenChart"></div>
+        <ul class="bmin" id="brokenList"></ul>
+      </div>
+
+      <div class="pcard">
+        <h3>强首板池<em>封单强度 / 封板时间</em></h3>
+        <ol class="strong" id="strongList"></ol>
+      </div>
+
+      <div class="pcard">
+        <h3>板块轮动<em>近 5 个交易日上榜家数</em></h3>
+        <div class="rot" id="rotationGrid"></div>
+      </div>
+
+      <div class="pcard p-calendar">
+        <h3>月度热力<em>每格一天，颜色越亮涨停越多</em></h3>
+        <div class="cal" id="calendar"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-lhb" hidden>
+    <p class="lhb-meta" id="lhbMeta"></p>
+    <div class="lhb-list" id="lhbList"></div>
+  </section>
 
   <footer class="foot">
     <p class="disclaimer" id="disclaimer">内容来自网络整理，不做任何投资建议</p>

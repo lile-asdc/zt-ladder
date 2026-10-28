@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import analytics
+import dragon
 import em
 import payload as pl
 
@@ -81,6 +82,10 @@ def cmd_daily() -> None:
         import png
 
         png.render(f"{today[:4]}-{today[4:6]}-{today[6:]}")
+        try:
+            dragon.build_and_save(today, pl.DATA_DIR)
+        except Exception as exc:  # noqa: BLE001 - 龙虎榜失败不影响主流程
+            print(f"[warn] 龙虎榜抓取失败：{exc}")
     pl.rebuild_index()
 
 
@@ -128,6 +133,10 @@ def main(argv=None) -> int:
     sub.add_parser("index", help="仅重建索引")
     sub.add_parser("analytics", help="重算全部历史日的复盘指标（不联网）")
 
+    p_lhb = sub.add_parser("lhb", help="抓取某天/最近几天的龙虎榜")
+    p_lhb.add_argument("--date", default=None)
+    p_lhb.add_argument("--days", type=int, default=1)
+
     p_png = sub.add_parser("png", help="生成某天长图")
     p_png.add_argument("--date", default=None)
     p_png.add_argument("--all", action="store_true")
@@ -143,6 +152,17 @@ def main(argv=None) -> int:
         return 0
     if args.cmd == "index":
         print(pl.rebuild_index())
+        return 0
+    if args.cmd == "lhb":
+        from datetime import timedelta as _td
+
+        base = datetime.now(em.CST)
+        dates = [args.date] if args.date else [
+            (base - _td(days=i)).strftime("%Y%m%d") for i in range(args.days)
+        ]
+        for d in dates:
+            path = dragon.build_and_save(d, pl.DATA_DIR)
+            print(f"[{'ok' if path else 'skip'}] {d} 龙虎榜")
         return 0
     if args.cmd == "analytics":
         count = analytics.apply_all(pl.DATA_DIR)

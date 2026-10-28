@@ -88,6 +88,23 @@ def build_day(date: str, *, with_breadth: bool = True) -> dict:
             }
         )
 
+    # 真实炸板池（盘中封过又打开），用于「炸板复盘」
+    sealed_codes_set = {s["code"] for s in sealed}
+    zb = [
+        {
+            "code": s["code"],
+            "name": s["name"],
+            "pct": s["pct"],
+            "time": s["firstTime"],
+            "times": s["brokenTimes"],
+            "height": s["boards"],
+            "sector": s["sector"],
+            "amount": s["amount"],
+            "resealed": s["code"] in sealed_codes_set,
+        }
+        for s in broken_raw
+    ]
+
     for stock in sealed:
         info = reasons.get(stock["code"]) or {}
         stock["reason"] = info.get("reason") or ""
@@ -157,6 +174,7 @@ def build_day(date: str, *, with_breadth: bool = True) -> dict:
         },
         "sectors": chips,
         "rows": rows,
+        "zb": zb,
         "prevDate": f"{prev_date[:4]}-{prev_date[4:6]}-{prev_date[6:]}" if prev_date else None,
         "disclaimer": DISCLAIMER,
         "updatedAt": datetime.now(em.CST).isoformat(timespec="seconds"),

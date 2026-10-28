@@ -206,7 +206,168 @@ def compute(day: dict, prev: dict | None) -> dict:
         "leaders": lead,
         "yesterdayDiff": diff,
         "summary": summary_text(day, promo, heat, lead),
+        "emotion": emotion(day, promo),
+        "heightDist": height_dist(day, prev),
+        "brokenReview": broken_review(day),
+        "strongFirst": strong_first(day),
     }
+
+
+
+# --------------------------------------------------------------------------- #
+# 情绪 / 结构 / 炸板 / 强首板 / 板块轮动
+# --------------------------------------------------------------------------- #
+EMOTION_LEVELS = [(30, "冰点"), (45, "低迷"), (60, "修复"), (75, "活跃"), (101, "亢奋")]
+
+
+def emotion(day: dict, promo: list[dict]) -> dict:
+    stats = day["stats"]
+    sealed = stats.get("sealed") or 0
+    seal = stats.get("sealRate") or 0
+    p2 = next((p for p in promo if p["base"] == 1), None)
+    promote = p2["rate"] if p2 else 0
+    maxb = stats.get("maxBoard") or 1
+
+    c = min(1.0, max(0.0, (sealed - 20) / 80))
+    s = min(1.0, seal / 100)
+    p = min(1.0, promote / 60)
+    h = min(1.0, max(0.0, (maxb - 2) / 6))
+    score = round(100 * (0.34 * c + 0.26 * s + 0.25 * p + 0.15 * h))
+    label = next(name for limit, name in EMOTION_LEVELS if score < limit)
+    return {
+        "score": score,
+        "label": label,
+        "parts": {
+            "涨停家数": round(c * 100),
+            "封板率": round(s * 100),
+            "首板晋级": round(p * 100),
+            "高度": round(h * 100),
+        },
+    }
+
+
+def height_dist(day: dict, prev: dict | None) -> list[dict]:
+    today: dict[int, dict] = {}
+    for row in day["rows"]:
+        item = today.setdefault(row["height"], {"height": row["height"], "sealed": 0, "broken": 0, "prev": 0})
+        for s in row["stocks"]:
+            if s.get("broken"):
+                item["broken"] += 1
+            else:
+                item["sealed"] += 1
+    if prev:
+        for row in prev["rows"]:
+            item = today.get(row["height"])
+            if item:
+                item["prev"] = sum(1 for s in row["stocks"] if not s.get("broken"))
+    return [today[h] for h in sorted(today, reverse=True)]
+
+
+def broken_review(day: dict) -> dict:
+    rows = []
+    buckets = {"09:30-10:00": 0, "10:00-11:00": 0, "11:00-13:30": 0, "13:30-14:30": 0, "14:30-15:00": 0, "未知": 0}
+    entries = day.get("zb") or []
+    resealed = 0
+    for e in entries:
+        if e.get("resealed"):
+            resealed += 1
+        t = e.get("time") or ""
+        rows.append(
+            {
+                "code": e["code"],
+                "name": e["name"],
+                "height": e.get("height"),
+                "pct": e.get("pct"),
+                "time": t,
+                "times": e.get("times"),
+                "sector": e.get("sector"),
+                "resealed": bool(e.get("resealed")),
+            }
+        )
+        if not t:
+            buckets["未知"] += 1
+        elif t < "10:00":
+            buckets["09:30-10:00"] += 1
+        elif t < "11:00":
+            buckets["10:00-11:00"] += 1
+        elif t < "13:30":
+            buckets["11:00-13:30"] += 1
+        elif t < "14:30":
+            buckets["13:30-14:30"] += 1
+        else:
+            buckets["14:30-15:00"] += 1
+    rows.sort(key=lambda x: (x["time"] or "99:99"))
+    total = len(rows)
+    return {
+        "list": rows,
+        "buckets": [{"label": k, "count": v} for k, v in buckets.items() if v],
+        "sealed": day["stats"]["sealed"],
+        "broken": total,
+        "resealed": resealed,
+        "rate": round(total / (total + day["stats"]["sealed"]) * 100, 1) if (total + day["stats"]["sealed"]) else None,
+    }
+
+
+def _minutes(t: str | None) -> int | None:
+    if not t or ":" not in t:
+        return None
+    h, m = t.split(":")[:2]
+    return int(h) * 60 + int(m)
+
+
+def strong_first(day: dict, limit: int = 10) -> list[dict]:
+    out = []
+    for s in _sealed(day):
+        if s["boards"] != 1:
+            continue
+        amount = float(s.get("amount") or 0)
+        seal = float(s.get("sealAmount") or 0)
+        ratio = seal / amount if amount else 0
+        minute = _minutes(s.get("firstTime")) or 400
+        earliness = max(0.0, 1 - (minute - 570) / 330)  # 9:30 满分，15:00 0 分
+        score = (
+            48 * min(1.0, ratio / 0.35)
+            + 30 * earliness
+            + (12 if s.get("oneWord") else 0)
+            - 4 * min(3, int(s.get("brokenTimes") or 0))
+        )
+        out.append(
+            {
+                "code": s["code"],
+                "name": s["name"],
+                "sector": s.get("sector"),
+                "time": s.get("lastTime") or s.get("firstTime"),
+                "sealRatio": round(ratio * 100, 1),
+                "seal": round(seal / 1e8, 2),
+                "amount": round(amount / 1e8, 2),
+                "score": round(max(0, min(100, score))),
+            }
+        )
+    out.sort(key=lambda x: -x["score"])
+    return out[:limit]
+
+
+def rotation(days: list[dict], i: int, window: int = 5, top: int = 6) -> list[dict]:
+    start = max(0, i - window + 1)
+    chunk = days[start : i + 1]
+    today_counts: Counter[str] = Counter()
+    series: dict[str, list[int]] = {}
+    for d in chunk:
+        counts = Counter()
+        for row in d["rows"]:
+            for s in row["stocks"]:
+                counts[(s.get("sector") or "其他")] += 1
+        for name, n in counts.items():
+            series.setdefault(name, []).append(n)
+        if d is days[i]:
+            today_counts = counts
+
+    rows = []
+    for name, values in series.items():
+        padded = [0] * (len(chunk) - len(values)) + values
+        rows.append({"name": name, "counts": padded[-window:], "total": sum(values), "today": today_counts.get(name, 0)})
+    rows.sort(key=lambda x: (-x["today"], -x["total"]))
+    return rows[:top]
 
 
 def apply_all(data_dir: Path) -> int:
@@ -238,6 +399,11 @@ def apply_all(data_dir: Path) -> int:
                 }
             )
         computed[i]["trend"] = trend
+        computed[i]["rotation"] = rotation([d for _, d in days], i)
+        computed[i]["emotionTrend"] = [
+            {"date": days[j][1]["date"], "score": computed[j]["emotion"]["score"]}
+            for j in range(max(0, i - 19), i + 1)
+        ]
 
     for i, (path, day) in enumerate(days):
         day.update(computed[i])

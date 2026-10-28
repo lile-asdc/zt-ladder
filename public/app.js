@@ -229,7 +229,9 @@
     syncDateControls();
     checkPng(data.date);
     prefetchNeighbours();
-    if (state.view === "review") renderReview(data, state.index);
+    if (state.view === "review") {
+      loadPrevDay(data).then(() => renderReview(data, state.index));
+    }
     if (state.view === "lhb") {
       state.lhb = null;
       state.lhbDate = null;
@@ -813,7 +815,9 @@
       if (node) node.hidden = v !== name;
     });
     document.body.classList.toggle("view-ladder", name === "ladder");
-    if (name === "review" && state.data) renderReview(state.data, state.index);
+    if (name === "review" && state.data) {
+      loadPrevDay(state.data).then(() => renderReview(state.data, state.index));
+    }
     if (name === "lhb") loadLhb();
   }
 
@@ -834,6 +838,23 @@
     if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(2)} 亿`;
     return `${n.toFixed(0)} 万`;
   };
+
+  async function loadPrevDay(data) {
+    const days = (state.index && state.index.days) || [];
+    const i = days.findIndex((d) => d.date === data.date);
+    const prevDate = days[i + 1] && days[i + 1].date;
+    if (!prevDate) {
+      state.prevData = null;
+      return;
+    }
+    if (state.prevData && state.prevData.date === prevDate) return;
+    try {
+      const res = await fetch(`data/${prevDate}.json`, { cache: "force-cache" });
+      state.prevData = res.ok ? await res.json() : null;
+    } catch {
+      state.prevData = null;
+    }
+  }
 
   function renderReview(data, index) {
     if (!data) return;
@@ -951,6 +972,120 @@
         rot.append(cell);
       });
     });
+
+    // 赚钱效应
+    const eff = data.effect || {};
+    const effKpi = $("#effectKpi");
+    effKpi.textContent = "";
+    if (eff.count) {
+      effKpi.append(
+        el("div", { class: "kpi-item" }, [el("b", { text: `${eff.avg > 0 ? "+" : ""}${eff.avg}%` }), el("em", { text: "平均涨幅" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: `${eff.redRate}%` }), el("em", { text: "红盘率" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: `${eff.limitRate ?? "—"}%` }), el("em", { text: "再涨停率" })])
+      );
+    } else {
+      effKpi.append(el("span", { class: "kpi-empty", text: "暂无数据" }));
+    }
+    const effChart = $("#effectChart");
+    effChart.textContent = "";
+    const effSeries = (data.effectTrend || []).map((t) => ({ date: t.date, v: t.avg }));
+    if (effSeries.length >= 2) effChart.append(sparkSvg(effSeries, "赚钱效应"));
+
+    // 炸板回封率
+    const rs = data.reseal || {};
+    const rsKpi = $("#resealKpi");
+    rsKpi.textContent = "";
+    if (rs.total) {
+      rsKpi.append(
+        el("div", { class: "kpi-item" }, [el("b", { text: `${rs.rate}%` }), el("em", { text: "回封率" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: String(rs.resealed) }), el("em", { text: "回封" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: String(rs.total) }), el("em", { text: "触板" })])
+      );
+    } else {
+      rsKpi.append(el("span", { class: "kpi-empty", text: "暂无数据" }));
+    }
+    const rsChart = $("#resealChart");
+    rsChart.textContent = "";
+    const rsSeries = (data.resealTrend || []).map((t) => ({ date: t.date, v: t.rate }));
+    if (rsSeries.length >= 2) rsChart.append(sparkSvg(rsSeries, "回封率"));
+
+    // 首板次日溢价
+    const pm = data.premium || {};
+    const pmKpi = $("#premiumKpi");
+    pmKpi.textContent = "";
+    if (pm.count) {
+      pmKpi.append(
+        el("div", { class: "kpi-item" }, [el("b", { text: `${pm.open > 0 ? "+" : ""}${pm.open}%` }), el("em", { text: "次日开盘" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: `${pm.high > 0 ? "+" : ""}${pm.high}%` }), el("em", { text: "次日最高" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: `${pm.close > 0 ? "+" : ""}${pm.close}%` }), el("em", { text: "次日收盘" })]),
+        el("div", { class: "kpi-item" }, [el("b", { text: `${pm.winRate}%` }), el("em", { text: "收红率" })])
+      );
+    } else {
+      pmKpi.append(el("span", { class: "kpi-empty", text: "需等下一交易日收盘后生成" }));
+    }
+    $("#premiumNote").textContent = pm.count ? `样本 ${pm.count} 只首板` : "";
+
+    // 市值结构
+    const capBox = $("#capBars");
+    capBox.textContent = "";
+    const caps = data.capDist || [];
+    const capMax = Math.max(...caps.map((c) => c.count), 1);
+    caps.forEach((c) => {
+      const row = el("div", { class: "cap-row" });
+      row.append(el("span", { class: "cap-label", text: c.label }));
+      const bar = el("span", { class: "cap-bar" });
+      const fill = el("i");
+      fill.style.width = `${(c.count / capMax) * 100}%`;
+      bar.append(fill);
+      row.append(bar, el("span", { class: "cap-num", text: String(c.count) }));
+      capBox.append(row);
+    });
+
+    // 题材迁移
+    const ws = $("#wordShift");
+    ws.textContent = "";
+    (data.wordShift || []).slice(0, 10).forEach((w) => {
+      const diff = w.today - w.prev;
+      const row = el("div", { class: "ws-row" });
+      row.append(el("span", { class: "ws-name", text: w.name }));
+      row.append(el("span", { class: "ws-num", text: `${w.today}` }));
+      row.append(el("span", { class: `ws-diff ${diff > 0 ? "up" : diff < 0 ? "down" : ""}`, text: diff === 0 ? "—" : `${diff > 0 ? "+" : ""}${diff}` }));
+      row.append(el("span", { class: "ws-prev", text: `昨 ${w.prev}` }));
+      ws.append(row);
+    });
+
+    // 两日对比
+    const td = $("#twoDay");
+    td.textContent = "";
+    if (state.prevData && state.prevData.date) {
+      const prev = state.prevData;
+      const head = el("div", { class: "td-head", text: `${prev.date.slice(5)} vs ${data.date.slice(5)}` });
+      td.append(head);
+      const diff = data.yesterdayDiff || {};
+      const stats = [
+        ["晋级", (diff.promoted || []).length],
+        ["掉队", (diff.dropped || []).length],
+        ["新进首板", (diff.fresh || []).length],
+      ];
+      const line = el("div", { class: "td-stats" });
+      stats.forEach(([k, v]) => line.append(el("span", { text: `${k} ${v}` })));
+      td.append(line);
+
+      const todaySectors = new Map((data.sectors || []).map((s) => [s.name, s.count]));
+      const prevSectors = new Map((prev.sectors || []).map((s) => [s.name, s.count]));
+      const names = [...new Set([...todaySectors.keys(), ...prevSectors.keys()])].slice(0, 8);
+      names.forEach((n) => {
+        const a = todaySectors.get(n) || 0;
+        const b = prevSectors.get(n) || 0;
+        const row = el("div", { class: "td-row" });
+        row.append(el("span", { class: "td-name", text: n }));
+        row.append(el("span", { class: "td-num", text: String(a) }));
+        row.append(el("span", { class: `td-diff ${a > b ? "up" : a < b ? "down" : ""}`, text: a === b ? "—" : `${a > b ? "+" : ""}${a - b}` }));
+        td.append(row);
+      });
+    } else {
+      td.append(el("span", { class: "kpi-empty", text: "需要前一交易日数据" }));
+    }
 
     // 月度热力
     const cal = $("#calendar");

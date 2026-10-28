@@ -1425,3 +1425,38 @@ body:not(.view-ladder) .tools { display: none; }
   .sh-row { grid-template-columns: 46px 54px 58px 1fr; }
   .sh-row span:nth-child(5), .sh-row span:nth-child(6) { display: none; }
 }
+
+/* ---------------------------------------------------------------- 复盘卡片 v2 */
+.kpi { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; }
+.kpi-item { display: flex; flex-direction: column; gap: 2px; }
+.kpi-item b { font-size: 22px; color: var(--cyan); font-weight: 800; line-height: 1.1; }
+.kpi-item em { font-style: normal; font-size: 10.5px; color: #5b7391; }
+.kpi-empty { color: #4d6f99; font-size: 12px; }
+
+.premium-note { margin-top: 8px; font-size: 10.5px; color: #4d6f99; }
+
+.capbars { display: flex; flex-direction: column; gap: 8px; }
+.cap-row { display: grid; grid-template-columns: 74px 1fr 38px; gap: 8px; align-items: center; font-size: 12px; color: #8ba5c3; }
+.cap-bar { height: 12px; border-radius: 4px; background: #122a44; overflow: hidden; }
+.cap-bar i { display: block; height: 100%; background: linear-gradient(90deg, #2f81f7, #38d6ff); }
+.cap-num { text-align: right; color: #cfe2f7; }
+
+.wordshift { display: flex; flex-direction: column; gap: 4px; }
+.ws-row { display: grid; grid-template-columns: minmax(0, 1fr) 34px 40px 44px; gap: 8px; align-items: center; font-size: 12px; color: #a6bcd8; padding: 3px 0; border-top: 1px solid var(--line); }
+.ws-row:first-child { border-top: 0; }
+.ws-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-num { text-align: right; color: #e7f0fb; font-weight: 700; }
+.ws-diff { text-align: right; font-size: 11px; color: #5b7391; }
+.ws-diff.up { color: #6fe3a6; }
+.ws-diff.down { color: #e08a84; }
+.ws-prev { text-align: right; color: #4d6f99; font-size: 10.5px; }
+
+.twoday { display: flex; flex-direction: column; gap: 6px; }
+.td-head { font-size: 11.5px; color: #5b7391; }
+.td-stats { display: flex; gap: 14px; font-size: 12px; color: #a6bcd8; flex-wrap: wrap; }
+.td-row { display: grid; grid-template-columns: minmax(0, 1fr) 34px 44px; gap: 8px; font-size: 12px; color: #a6bcd8; }
+.td-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-num { text-align: right; color: #e7f0fb; font-weight: 600; }
+.td-diff { text-align: right; font-size: 11px; color: #5b7391; }
+.td-diff.up { color: #6fe3a6; }
+.td-diff.down { color: #e08a84; }

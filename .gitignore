@@ -12,4 +12,4 @@ edgeone-token.txt
 .env
 .edgeone/*
 .tef_dist/*
-  
+  .cache/

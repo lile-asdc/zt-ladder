@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+
+import kline
 from pathlib import Path
 
 DAY_GLOB = "????-??-??.json"
@@ -194,7 +196,128 @@ def summary_text(day: dict, promo: list[dict], heat: list[dict], lead: dict) -> 
     return "；".join(bits) + "。"
 
 
-def compute(day: dict, prev: dict | None) -> dict:
+
+# --------------------------------------------------------------------------- #
+# 赚钱效应 / 首板溢价 / 回封 / 市值结构 / 题材迁移
+# --------------------------------------------------------------------------- #
+def _pct(a: float, b: float) -> float | None:
+    if not b:
+        return None
+    return round((a / b - 1) * 100, 2)
+
+
+def money_effect(day: dict, prev: dict | None, data_dir: Path) -> dict:
+    """昨日涨停股今天的表现：平均涨幅、红盘率、连板率。"""
+    if not prev:
+        return {}
+    target = day["date"]
+    today_sealed = {s["code"] for s in _sealed(day)}
+    prev_sealed = _sealed(prev)
+
+    pcts = []
+    for stock in prev_sealed:
+        rows = kline.load(stock["code"], data_dir)
+        closes = {r[0]: r[4] for r in rows}
+        if target not in closes:
+            continue
+        idx = next((i for i, r in enumerate(rows) if r[0] == target), None)
+        if not idx:
+            continue
+        p = _pct(closes[target], rows[idx - 1][4])
+        if p is not None:
+            pcts.append(p)
+
+    if not pcts:
+        return {}
+    red = sum(1 for p in pcts if p > 0)
+    limit_up = sum(1 for s in prev_sealed if s["code"] in today_sealed)
+    return {
+        "count": len(pcts),
+        "avg": round(sum(pcts) / len(pcts), 2),
+        "redRate": round(red / len(pcts) * 100, 1),
+        "limitRate": round(limit_up / len(prev_sealed) * 100, 1) if prev_sealed else None,
+    }
+
+
+def first_board_premium(day: dict, data_dir: Path) -> dict:
+    """今日首板 → 次日开盘/最高/收盘相对今日收盘的溢价。"""
+    boards = [s for s in _sealed(day) if s["boards"] == 1]
+    opens, highs, closes = [], [], []
+    for stock in boards:
+        bar = kline.bar_after(stock["code"], data_dir, day["date"])
+        if not bar:
+            continue
+        _, o, h, _, c = bar
+        base = kline.close_on(stock["code"], data_dir, day["date"])
+        if not base:
+            continue
+        for bucket, value in ((opens, o), (highs, h), (closes, c)):
+            v = _pct(value, base)
+            if v is not None:
+                bucket.append(v)
+    if not closes:
+        return {}
+    return {
+        "count": len(closes),
+        "open": round(sum(opens) / len(opens), 2) if opens else None,
+        "high": round(sum(highs) / len(highs), 2) if highs else None,
+        "close": round(sum(closes) / len(closes), 2),
+        "winRate": round(sum(1 for c in closes if c > 0) / len(closes) * 100, 1),
+    }
+
+
+def reseal(day: dict) -> dict:
+    """炸板回封率 = 收盘回封的（有过开板但最终封住）/ 当日所有触板股。"""
+    zt_broken = [s for s in _sealed(day) if (s.get("brokenTimes") or 0) > 0]
+    zb = day.get("zb") or []
+    total = len(zt_broken) + len(zb)
+    if not total:
+        return {}
+    return {
+        "total": total,
+        "resealed": len(zt_broken),
+        "rate": round(len(zt_broken) / total * 100, 1),
+    }
+
+
+def cap_dist(day: dict) -> list[dict]:
+    buckets = [("<50亿", 0), ("50-100亿", 0), ("100-300亿", 0), (">300亿", 0), ("未知", 0)]
+    for s in _sealed(day):
+        cap = (s.get("floatCap") or 0) / 1e8
+        if not cap:
+            buckets[4] = (buckets[4][0], buckets[4][1] + 1)
+        elif cap < 50:
+            buckets[0] = (buckets[0][0], buckets[0][1] + 1)
+        elif cap < 100:
+            buckets[1] = (buckets[1][0], buckets[1][1] + 1)
+        elif cap < 300:
+            buckets[2] = (buckets[2][0], buckets[2][1] + 1)
+        else:
+            buckets[3] = (buckets[3][0], buckets[3][1] + 1)
+    return [{"label": k, "count": v} for k, v in buckets if v]
+
+
+def word_shift(day: dict, prev: dict | None) -> list[dict]:
+    def freq(d):
+        counter: Counter[str] = Counter()
+        for s in _sealed(d):
+            for token in set(_tokens(s.get("reason") or "")):
+                counter[token] += 1
+        return counter
+
+    today = freq(day)
+    before = freq(prev) if prev else Counter()
+    names = set(list(today)[:12] + [k for k, _ in before.most_common(6)])
+    rows = [
+        {"name": n, "today": today.get(n, 0), "prev": before.get(n, 0)}
+        for n in names
+        if today.get(n, 0) or before.get(n, 0)
+    ]
+    rows.sort(key=lambda x: (-x["today"], -x["prev"]))
+    return rows[:10]
+
+
+def compute(day: dict, prev: dict | None, data_dir: Path) -> dict:
     promo = promotion(day, prev)
     heat = sector_heat(day)
     diff = yesterday_diff(day, prev)
@@ -210,6 +333,11 @@ def compute(day: dict, prev: dict | None) -> dict:
         "heightDist": height_dist(day, prev),
         "brokenReview": broken_review(day),
         "strongFirst": strong_first(day),
+        "reseal": reseal(day),
+        "capDist": cap_dist(day),
+        "wordShift": word_shift(day, prev),
+        "effect": money_effect(day, prev, data_dir),
+        "premium": first_board_premium(day, data_dir),
     }
 
 
@@ -379,11 +507,14 @@ def apply_all(data_dir: Path) -> int:
         if data:
             days.append((path, data))
 
+    all_codes = [st["code"] for _, d in days for st in _sealed(d)]
+    kline.ensure(all_codes, data_dir)
+
     # 先算出每天的基础指标（依赖前一天）
     computed: list[dict] = []
     for i, (_, day) in enumerate(days):
         prev = days[i - 1][1] if i > 0 else None
-        computed.append(compute(day, prev))
+        computed.append(compute(day, prev, data_dir))
 
     # 再补「近 10 日趋势」
     for i, (_, day) in enumerate(days):
@@ -400,9 +531,19 @@ def apply_all(data_dir: Path) -> int:
             )
         computed[i]["trend"] = trend
         computed[i]["rotation"] = rotation([d for _, d in days], i)
+        computed[i]["resealTrend"] = [
+            {"date": days[j][1]["date"], "rate": computed[j].get("reseal", {}).get("rate")}
+            for j in range(max(0, i - 19), i + 1)
+            if computed[j].get("reseal")
+        ]
+        computed[i]["effectTrend"] = [
+            {"date": days[j][1]["date"], "avg": computed[j].get("effect", {}).get("avg")}
+            for j in range(max(0, i - 19), i + 1)
+            if computed[j].get("effect")
+        ]
         computed[i]["emotionTrend"] = [
             {"date": days[j][1]["date"], "score": computed[j]["emotion"]["score"]}
-            for j in range(max(0, i - 19), i + 1)
+            for j in range(max(0, i - 59), i + 1)
         ]
 
     for i, (path, day) in enumerate(days):

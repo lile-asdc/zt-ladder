@@ -539,8 +539,248 @@
     });
 
     $("#sheetReason").textContent = stock.reason ? `涨停原因：${stock.reason}` : "";
+    state.currentStock = stock;
+    renderHistory(stock.code);
     sheet.hidden = false;
     document.body.style.overflow = "hidden";
+  }
+
+  /* ------------------------------------------------------------ 个股档案 */
+  let stocksIndex = null;
+
+  async function loadStocks() {
+    if (stocksIndex) return stocksIndex;
+    try {
+      const res = await fetch("data/stocks.json");
+      stocksIndex = res.ok ? await res.json() : {};
+    } catch {
+      stocksIndex = {};
+    }
+    return stocksIndex;
+  }
+
+  async function renderHistory(code) {
+    const box = $("#sheetHist");
+    box.hidden = true;
+    box.textContent = "";
+    const idx = await loadStocks();
+    const item = idx[code];
+    if (!item || !item.hits || !item.hits.length) return;
+    if (!state.currentStock || state.currentStock.code !== code) return; // 已切到别的票
+
+    const hits = item.hits;
+    const sealed = hits.filter((h) => !h[3]).length;
+    const best = Math.max(...hits.map((h) => h[1]));
+    let promo = 0;
+    for (let i = 1; i < hits.length; i += 1) {
+      if (!hits[i][3] && !hits[i - 1][3] && hits[i][1] === hits[i - 1][1] + 1) promo += 1;
+    }
+
+    box.hidden = false;
+    const head = el("div", { class: "hist-head" });
+    head.append(el("b", { text: `近 ${hits.length} 次上榜` }));
+    head.append(el("em", { text: `封板 ${sealed} 次 · 晋级 ${promo} 次 · 最高 ${best} 板` }));
+    const strip = el("div", { class: "hist-strip" });
+    hits.slice(-12).forEach(([date, height, , broken]) => {
+      const tag = el("span", { class: `hit${broken ? " is-broken" : ""}` });
+      tag.append(document.createTextNode(date.slice(5)), el("b", { text: height === 1 ? "首板" : `${height}板` }));
+      strip.append(tag);
+    });
+    box.append(head, strip);
+  }
+
+  /* ------------------------------------------------------------ 单股分享图 */
+  function wrapText(g, text, maxWidth) {
+    const lines = [];
+    let line = "";
+    for (const ch of text) {
+      if (g.measureText(line + ch).width > maxWidth && line) {
+        lines.push(line);
+        line = ch;
+      } else {
+        line += ch;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  async function shareCard(stock) {
+    const W = 720;
+    const H = 780;
+    const DPR = 2;
+    const cv = document.createElement("canvas");
+    cv.width = W * DPR;
+    cv.height = H * DPR;
+    const g = cv.getContext("2d");
+    g.scale(DPR, DPR);
+
+    const FONT = '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif';
+
+    const idx = await loadStocks();
+    const hits = (idx[stock.code] && idx[stock.code].hits) || [];
+
+    const bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#0C1729");
+    bg.addColorStop(1, "#050A12");
+    g.fillStyle = bg;
+    g.fillRect(0, 0, W, H);
+
+    g.strokeStyle = "rgba(56,214,255,0.05)";
+    g.lineWidth = 1;
+    for (let x = 0; x < W; x += 40) {
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x, H);
+      g.stroke();
+    }
+    for (let y = 0; y < H; y += 40) {
+      g.beginPath();
+      g.moveTo(0, y);
+      g.lineTo(W, y);
+      g.stroke();
+    }
+
+    const glow = g.createRadialGradient(W / 2, -60, 10, W / 2, -60, 460);
+    glow.addColorStop(0, "rgba(47,129,247,0.35)");
+    glow.addColorStop(1, "rgba(47,129,247,0)");
+    g.fillStyle = glow;
+    g.fillRect(0, 0, W, H);
+
+    // 顶部
+    g.fillStyle = "#38d6ff";
+    g.font = `700 18px ${FONT}`;
+    g.fillText("连板天梯", 46, 62);
+    g.fillStyle = "#5b7391";
+    g.font = `400 16px ${FONT}`;
+    g.textAlign = "right";
+    g.fillText((state.date || "").replace(/-/g, "."), W - 46, 62);
+    g.textAlign = "left";
+
+    g.strokeStyle = "rgba(56,214,255,0.25)";
+    g.beginPath();
+    g.moveTo(46, 84);
+    g.lineTo(W - 46, 84);
+    g.stroke();
+
+    // 连板高度
+    const heightText = stock.boards === 1 ? "首板" : `${stock.boards} 板`;
+    const badgeW = stock.boards === 1 ? 96 : 108;
+    const badge = g.createLinearGradient(46, 108, 46, 162);
+    badge.addColorStop(0, "#3fdcff");
+    badge.addColorStop(1, "#2f81f7");
+    g.fillStyle = badge;
+    roundRect(g, 46, 108, badgeW, 54, 12);
+    g.fill();
+    g.fillStyle = "#04121f";
+    g.font = `800 26px ${FONT}`;
+    g.textAlign = "center";
+    g.fillText(heightText, 46 + badgeW / 2, 144);
+    g.textAlign = "left";
+
+    // 名称 / 代码
+    g.fillStyle = "#f2f8ff";
+    g.font = `800 52px ${FONT}`;
+    g.fillText(stock.name, 46, 252);
+    const nameW = g.measureText(stock.name).width;
+    g.fillStyle = "#5b7391";
+    g.font = `400 20px ${FONT}`;
+    g.fillText(stock.code, 46 + nameW + 12, 252);
+
+    // 板块 · 状态
+    g.fillStyle = "#8ba5c3";
+    g.font = `400 20px ${FONT}`;
+    const stateText = stock.broken
+      ? `炸板 ${fmtPct(stock.pct)}`
+      : `封板 ${stock.lastTime || stock.firstTime || ""}`;
+    g.fillText(`${stock.sector || "其他"} · ${stateText}`, 46, 290);
+
+    // 涨停原因（有才画）
+    let cursor = 336;
+    if (stock.reason) {
+      g.fillStyle = "#9fb6d3";
+      g.font = `400 18px ${FONT}`;
+      wrapText(g, stock.reason, W - 92)
+        .slice(0, 2)
+        .forEach((line, i) => g.fillText(line, 46, cursor + i * 26));
+      cursor += 58;
+    }
+
+    // 数据块
+    const stats = [
+      ["涨幅", fmtPct(stock.pct)],
+      ["封单", stock.sealAmount ? `${(stock.sealAmount / 1e8).toFixed(2)} 亿` : "—"],
+      ["成交额", fmtMoney(stock.amount)],
+      ["换手率", fmtHand(stock.turnover)],
+    ];
+    const boxTop = stock.reason ? Math.max(cursor, 340) : 340;
+    const boxW = (W - 92) / 2 - 8;
+    stats.forEach(([k, v], i) => {
+      const x = 46 + (i % 2) * (boxW + 16);
+      const y = boxTop + Math.floor(i / 2) * 96;
+      g.fillStyle = "rgba(47,129,247,0.08)";
+      roundRect(g, x, y, boxW, 80, 12);
+      g.fill();
+      g.fillStyle = "#5b7391";
+      g.font = `400 15px ${FONT}`;
+      g.fillText(k, x + 16, y + 28);
+      g.fillStyle = "#e7f0fb";
+      g.font = `700 28px ${FONT}`;
+      g.fillText(v, x + 16, y + 64);
+    });
+
+    // 近况
+    const histTop = boxTop + 200;
+    if (hits.length) {
+      const sealed = hits.filter((h) => !h[3]).length;
+      const best = Math.max(...hits.map((h) => h[1]));
+      g.fillStyle = "#5b7391";
+      g.font = `400 15px ${FONT}`;
+      g.fillText(`近 ${hits.length} 次上榜 · 封板 ${sealed} 次 · 最高 ${best} 板`, 46, histTop);
+      let x = 46;
+      hits.slice(-7).forEach(([date, height, , broken]) => {
+        const label = `${date.slice(5)} ${height === 1 ? "首" : height + "板"}`;
+        g.font = `600 13px ${FONT}`;
+        const w = g.measureText(label).width + 18;
+        g.fillStyle = broken ? "rgba(100,120,143,0.18)" : "rgba(47,129,247,0.16)";
+        roundRect(g, x, histTop + 16, w, 26, 7);
+        g.fill();
+        g.fillStyle = broken ? "#8fa3ba" : "#a8d4ff";
+        g.fillText(label, x + 9, histTop + 34);
+        x += w + 6;
+      });
+    }
+
+    // 页脚
+    g.fillStyle = "#3d4f66";
+    g.font = `400 15px ${FONT}`;
+    g.fillText("数据来源 东方财富 · 同花顺", 46, H - 58);
+    g.fillStyle = "#38d6ff";
+    g.fillText("lile-asdc.github.io/zt-ladder", 46, H - 32);
+    g.fillStyle = "#2f3d4f";
+    g.font = `400 14px ${FONT}`;
+    g.textAlign = "right";
+    g.fillText("不做任何投资建议", W - 46, H - 32);
+    g.textAlign = "left";
+
+    cv.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `连板天梯-${stock.name}-${state.date}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, "image/png");
   }
 
   function closeSheet() {
@@ -568,6 +808,10 @@
       state.showReason = !state.showReason;
       e.currentTarget.setAttribute("aria-pressed", String(state.showReason));
       document.body.classList.toggle("show-reason", state.showReason);
+    });
+
+    $("#shareBtn").addEventListener("click", () => {
+      if (state.currentStock) shareCard(state.currentStock);
     });
 
     $("#viewToggle").addEventListener("click", (e) => {

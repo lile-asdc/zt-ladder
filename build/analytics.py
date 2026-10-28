@@ -155,9 +155,21 @@ def leaders(day: dict) -> dict:
             item.update(extra(s))
         return item
 
+    # 天梯顶格（可能是炸板），和图上第一行保持一致
+    top_row = day["rows"][0] if day.get("rows") else None
+    top_stock = top_row["stocks"][0] if top_row and top_row["stocks"] else None
+    top = None
+    if top_stock:
+        top = brief(top_stock)
+        top["boards"] = top_row["height"]
+        top["broken"] = bool(top_stock.get("broken"))
+
     return {
-        "maxBoard": brief(by_height[0]) if by_height else None,
-        "sealKing": brief(by_seal[0], lambda s: {"seal": round(float(s.get("sealAmount") or 0) / 1e8, 2)}) if by_seal else None,
+        "maxBoard": top,
+        "sealKing": brief(by_seal[0], lambda s: {
+            "seal": round(float(s.get("sealAmount") or 0) / 1e8, 2),
+            "turnover": s.get("turnover"),
+        }) if by_seal else None,
         "oneWord": [brief(s) for s in one_word[:3]],
     }
 
@@ -167,7 +179,7 @@ def summary_text(day: dict, promo: list[dict], heat: list[dict], lead: dict) -> 
     bits = []
     top = lead.get("maxBoard")
     if top:
-        bits.append(f"最高 {top['boards']} 板 {top['name']}")
+        bits.append(f"最高 {top['boards']} 板 {top['name']}" + ("（炸板）" if top.get("broken") else ""))
     bits.append(f"涨停 {stats['sealed']} 家（首板 {stats['firstBoard']}）")
     if stats.get("sealRate") is not None:
         bits.append(f"封板率 {stats['sealRate']}%")
@@ -230,4 +242,25 @@ def apply_all(data_dir: Path) -> int:
     for i, (path, day) in enumerate(days):
         day.update(computed[i])
         path.write_text(json.dumps(day, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    _write_stock_index(data_dir, days)
     return len(days)
+
+
+def _write_stock_index(data_dir: Path, days: list[tuple[Path, dict]]) -> Path:
+    """把所有日期的个股记录压成一份索引，供「个股档案」按需读取。"""
+    index: dict[str, dict] = {}
+    for _, day in days:
+        for row in day["rows"]:
+            for s in row["stocks"]:
+                item = index.setdefault(
+                    s["code"], {"name": s["name"], "sector": s.get("sector"), "hits": []}
+                )
+                item["name"] = s["name"]
+                item["sector"] = s.get("sector") or item.get("sector")
+                item["hits"].append(
+                    [day["date"], row["height"], s.get("pct"), 1 if s.get("broken") else 0]
+                )
+    out = data_dir / "stocks.json"
+    out.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return out

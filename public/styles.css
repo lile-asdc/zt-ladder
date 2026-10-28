@@ -934,3 +934,54 @@ body.show-reason .stk-reason { display: -webkit-box; }
   .tl-row { grid-template-columns: 52px minmax(0, 1fr) 46px; }
   .tl-sec { display: none; }
 }
+
+/* ---------------------------------------------------------------- 个股档案 */
+.hist { margin: 4px 0 14px; }
+
+.hist-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  color: #8ba5c3;
+  font-size: 12.5px;
+}
+
+.hist-head b { color: #e7f0fb; font-size: 15px; }
+.hist-head em { font-style: normal; color: #5b7391; }
+
+.hist-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.hit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(47, 129, 247, 0.1);
+  border: 1px solid rgba(47, 129, 247, 0.22);
+  color: #a6bcd8;
+  font-size: 11.5px;
+}
+
+.hit b { color: var(--cyan); font-weight: 700; }
+.hit.is-broken { background: rgba(100, 120, 143, 0.12); border-color: rgba(100, 120, 143, 0.28); color: #7f93aa; }
+.hit.is-broken b { color: #8fa3ba; }
+
+.sheet-actions { margin-top: 16px; display: flex; gap: 10px; }
+
+.sheet-share {
+  flex: 1 1 auto;
+  height: 40px;
+  border: 1px solid rgba(56, 214, 255, 0.45);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(47, 129, 247, 0.9), rgba(20, 80, 180, 0.9));
+  color: #eaf7ff;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.sheet-share:hover { filter: brightness(1.12); }

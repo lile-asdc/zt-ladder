@@ -1042,6 +1042,7 @@
 
     renderSummary(chart);
     renderRankLists(chart);
+    renderSectors(chart);
     renderDetail();
   }
 
@@ -1088,6 +1089,28 @@
       li.append(el("span", { class: "sc", text: `${s.net > 0 ? "+" : ""}${s.net} 亿` }));
       li.addEventListener("click", () => openStockPage(s.code));
       streak.append(li);
+    });
+  }
+
+  function renderSectors(chart) {
+    const box = $("#sectorTable");
+    box.textContent = "";
+    const rows = (chart.sectors || []).slice(0, 8);
+    if (!rows.length) {
+      box.append(el("div", { class: "st-empty", text: "今日暂无板块数据" }));
+      return;
+    }
+    const head = el("div", { class: "st-row st-head" });
+    ["板块", "家数", "净买", "机构"].forEach((t) => head.append(el("span", { text: t })));
+    box.append(head);
+    rows.forEach((row) => {
+      const line = el("div", { class: "st-row" });
+      line.append(el("span", { class: "st-name", text: row.name }));
+      line.append(el("span", { text: String(row.count) }));
+      line.append(el("span", { class: `st-num ${row.net >= 0 ? "in" : "out"}`, text: `${row.net > 0 ? "+" : ""}${row.net}` }));
+      line.append(el("span", { class: `st-num ${row.instNet >= 0 ? "in" : "out"}`, text: `${row.instNet > 0 ? "+" : ""}${row.instNet}` }));
+      line.title = row.stocks.join("、");
+      box.append(line);
     });
   }
 
@@ -1360,7 +1383,7 @@
     const hits = item.hits || [];
     if (hits.length) {
       const best = Math.max(...hits.map((h) => h[1]));
-      head.append(el("p", { class: "sp-meta", text: `近 ${hits.length} 次上榜 · 最高 ${best} 板 · 最近 ${hits[hits.length - 1][0]}` }));
+      head.append(el("p", { class: "sp-meta", text: `涨停 ${hits.length} 次 · 最高 ${best} 板 · 最近 ${hits[hits.length - 1][0]}（下方为龙虎榜记录）` }));
     }
     box.append(head);
 
@@ -1402,6 +1425,56 @@
     } else {
       box.append(el("p", { class: "hd-empty", text: "该股当日未上龙虎榜" }));
     }
+
+    // 多日席位对比
+    try {
+      const histRes = await fetch("data/lhb/history.json", { cache: "force-cache" });
+      if (histRes.ok) {
+        const history = await histRes.json();
+        const entry = history[code];
+        if (entry && entry.days && entry.days.length > 1) {
+          box.append(renderSeatHistory(entry));
+        }
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  function renderSeatHistory(entry) {
+    const wrap = el("div", { class: "sp-history" });
+    wrap.append(el("h3", { text: "多日席位对比" }));
+    const head = el("div", { class: "sh-row sh-head" });
+    ["日期", "涨幅", "净买", "机构", "北向", "主要买方"].forEach((t) => head.append(el("span", { text: t })));
+    wrap.append(head);
+
+    const days = entry.days.slice(-8);
+    days.forEach((d, i) => {
+      const row = el("div", { class: "sh-row" });
+      row.append(el("span", { text: d.date.slice(5) }));
+      row.append(el("span", { class: `sh-pct ${d.pct >= 0 ? "up" : "down"}`, text: fmtPct(d.pct) }));
+      row.append(el("span", { class: `sh-num ${d.net >= 0 ? "in" : "out"}`, text: `${d.net > 0 ? "+" : ""}${d.net}` }));
+      row.append(el("span", { class: `sh-num ${d.instNet >= 0 ? "in" : "out"}`, text: `${d.instNet > 0 ? "+" : ""}${d.instNet}` }));
+      row.append(el("span", { class: `sh-num ${d.northNet >= 0 ? "in" : "out"}`, text: `${d.northNet > 0 ? "+" : ""}${d.northNet}` }));
+      const buyers = el("span", { class: "sh-buyers" });
+      (d.topBuy || []).slice(0, 2).forEach((b) => {
+        buyers.append(el("i", { class: `seat-tag ${TAG_CLASS[b.tag] || ""}`, text: b.tag === "营业部" ? "游资" : b.tag }));
+        buyers.append(document.createTextNode(`${b.name.slice(0, 10)} `));
+      });
+      row.append(buyers);
+
+      // 机构/游资切换判定
+      const prev = days[i - 1];
+      let verdict = "";
+      if (prev) {
+        if (d.instNet > 0 && prev.instNet <= 0) verdict = "机构进场";
+        else if (d.instNet < 0 && prev.instNet >= 0) verdict = "机构撤退";
+        else if (d.net > 0 && d.instNet <= 0 && prev.instNet <= 0) verdict = "游资接力";
+      }
+      if (verdict) row.append(el("span", { class: `sh-verdict ${verdict === "机构进场" ? "up" : verdict === "机构撤退" ? "down" : ""}`, text: verdict }));
+      wrap.append(row);
+    });
+    return wrap;
   }
 
   /* ------------------------------------------------------------ 事件绑定 */

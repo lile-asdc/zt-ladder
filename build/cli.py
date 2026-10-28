@@ -86,6 +86,7 @@ def cmd_daily() -> None:
         try:
             dragon.build_and_save(today, pl.DATA_DIR)
             lhb_chart.build(today, pl.DATA_DIR)
+            lhb_chart.build_history(pl.DATA_DIR)
         except Exception as exc:  # noqa: BLE001 - 龙虎榜失败不影响主流程
             print(f"[warn] 龙虎榜抓取失败：{exc}")
     pl.rebuild_index()
@@ -166,6 +167,7 @@ def main(argv=None) -> int:
             path = dragon.build_and_save(d, pl.DATA_DIR)
             chart = lhb_chart.build(d, pl.DATA_DIR) if path else None
             print(f"[{'ok' if path else 'skip'}] {d} 龙虎榜 {'+ 分时' if chart else ''}")
+        lhb_chart.build_history(pl.DATA_DIR)
         return 0
     if args.cmd == "analytics":
         count = analytics.apply_all(pl.DATA_DIR)

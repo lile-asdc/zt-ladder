@@ -133,6 +133,33 @@ def _norm(date: str) -> str:
     return f"{date[:4]}-{date[4:6]}-{date[6:]}" if len(date) == 8 and date.isdigit() else date
 
 
+
+def _seat_stats(seat_map: dict) -> dict:
+    """按席位名合并买卖两侧，算出机构/北向净买、首位占比、主要买方。"""
+    merged: dict[str, dict] = {}
+    for side in ("b", "s"):
+        for row in (seat_map or {}).get(side) or []:
+            name = row[0]
+            slot = merged.setdefault(
+                name,
+                {"buy": 0, "sell": 0, "net": 0, "tag": row[5] if len(row) > 5 else "营业部"},
+            )
+            slot["buy"] += row[1] or 0
+            slot["sell"] += row[2] or 0
+            slot["net"] += row[3] or 0
+    inst = sum(v["net"] for v in merged.values() if v["tag"] == "机构") / 10000
+    north = sum(v["net"] for v in merged.values() if v["tag"] == "北向") / 10000
+    buy_total = sum(v["buy"] for v in merged.values())
+    top1 = max((v["buy"] for v in merged.values()), default=0)
+    top_buy = sorted(merged.items(), key=lambda kv: -kv[1]["buy"])[:3]
+    return {
+        "instNet": round(inst, 2),
+        "northNet": round(north, 2),
+        "concentration": round(min(100.0, top1 / buy_total * 100), 1) if buy_total else None,
+        "topBuy": [{"name": k, "tag": v["tag"], "buy": round(v["buy"] / 10000, 2)} for k, v in top_buy],
+    }
+
+
 def build(date: str, data_dir: Path, top: int = 20) -> Path | None:
     date = _norm(date)
     lhb = dragon.load(date, data_dir)
@@ -188,24 +215,9 @@ def build(date: str, data_dir: Path, top: int = 20) -> Path | None:
                 "seats": s.get("seats") or {},
             }
         )
-    # 机构 / 北向净买 + 席位集中度（按席位名去重，买卖两侧合并）
     for item in ranked:
-        seat_map = item.get("seats") or {}
-        merged: dict[str, dict] = {}
-        for side in ("b", "s"):
-            for row in seat_map.get(side) or []:
-                name = row[0]
-                slot = merged.setdefault(name, {"buy": 0, "sell": 0, "net": 0, "tag": row[5] if len(row) > 5 else "营业部"})
-                slot["buy"] += row[1] or 0
-                slot["sell"] += row[2] or 0
-                slot["net"] += row[3] or 0
-        inst = sum(v["net"] for v in merged.values() if v["tag"] == "机构") / 10000
-        north = sum(v["net"] for v in merged.values() if v["tag"] == "北向") / 10000
-        buy_total = sum(v["buy"] for v in merged.values())
-        top1 = max((v["buy"] for v in merged.values()), default=0)
-        item["instNet"] = round(inst, 2)
-        item["northNet"] = round(north, 2)
-        item["concentration"] = round(min(100.0, top1 / buy_total * 100), 1) if buy_total else None
+        stats = _seat_stats(item.get("seats") or {})
+        item.update({k: stats[k] for k in ("instNet", "northNet", "concentration", "topBuy")})
 
     ranked.sort(key=lambda x: -x["heat"])
     hot = ranked[:top]
@@ -247,16 +259,47 @@ def build(date: str, data_dir: Path, top: int = 20) -> Path | None:
         ][:6]
         charts[code] = {"points": points, "events": events, "spikes": spikes}
 
+    # 板块 × 龙虎榜
+    sector_map = {}
+    for row in day.get("rows", []):
+        for st in row["stocks"]:
+            sector_map[st["code"]] = st.get("sector")
+    stocks_json = data_dir / "stocks.json"
+    if stocks_json.exists():
+        try:
+            hist = json.loads(stocks_json.read_text(encoding="utf-8"))
+            for code, meta in hist.items():
+                sector_map.setdefault(code, meta.get("sector"))
+        except ValueError:
+            pass
+
+    agg: dict[str, dict] = {}
+    for item in ranked:
+        sector = (sector_map.get(item["code"]) or "其他").strip()
+        slot = agg.setdefault(sector, {"name": sector, "count": 0, "net": 0.0, "instNet": 0.0, "northNet": 0.0, "stocks": []})
+        slot["count"] += 1
+        slot["net"] += item["net"]
+        slot["instNet"] += item["instNet"]
+        slot["northNet"] += item["northNet"]
+        if len(slot["stocks"]) < 4:
+            slot["stocks"].append(item["name"])
+    sectors = sorted(agg.values(), key=lambda x: -x["instNet"])[:10]
+    for slot in sectors:
+        for key in ("net", "instNet", "northNet"):
+            slot[key] = round(slot[key], 2)
+
     payload = {
         "date": _norm(date),
         "hot": hot,
         "charts": charts,
         "index": index_points,
         "summary": _summary(lhb, hot),
+        "sectors": sectors,
         "streak": _streak(_norm(date), data_dir),
         "updatedAt": datetime.now(em.CST).isoformat(timespec="seconds"),
     }
     lhb["hot"] = hot
+    lhb["sectors"] = sectors
     (data_dir / dragon.LHB_DIR / f"{_norm(date)}.json").write_text(
         json.dumps(lhb, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
@@ -353,3 +396,32 @@ def _prev_day(date: str) -> str | None:
         cand = (cur - timedelta(days=i)).strftime("%Y-%m-%d")
         return cand
     return None
+
+
+def build_history(data_dir: Path) -> Path:
+    """把所有龙虎榜日文件汇总成「个股 → 每日席位快照」，用于多日对比。"""
+    out: dict[str, list] = {}
+    files = sorted((data_dir / dragon.LHB_DIR).glob("????-??-??.json"))
+    for path in files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for stock in payload.get("stocks") or []:
+            stats = _seat_stats(stock.get("seats") or {})
+            out.setdefault(stock["code"], {"name": stock["name"], "days": []})["days"].append(
+                {
+                    "date": payload["date"],
+                    "net": round((stock.get("net") or 0) / 10000, 2),
+                    "pct": stock.get("pct"),
+                    "reason": stock.get("reason") or "",
+                    "instNet": stats["instNet"],
+                    "northNet": stats["northNet"],
+                    "topBuy": stats["topBuy"],
+                }
+            )
+    for item in out.values():
+        item["days"].sort(key=lambda d: d["date"])
+    target = data_dir / dragon.LHB_DIR / "history.json"
+    target.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return target

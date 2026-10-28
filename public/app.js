@@ -958,17 +958,24 @@
     }
     $("#hotList").textContent = "加载中…";
     try {
-      const [res, chartRes] = await Promise.all([
-        fetch(`data/lhb/${date}.json`, { cache: "no-cache" }),
-        fetch(`data/lhb/${date}-chart.json`, { cache: "no-cache" }),
-      ]);
+      const res = await fetch(`data/lhb/${date}.json`, { cache: "no-cache" });
       if (!res.ok) throw new Error("no data");
       state.lhb = await res.json();
-      state.lhbChart = chartRes.ok ? await chartRes.json() : null;
+      state.lhbChart = { date: state.lhb.date, hot: state.lhb.hot || [], charts: {}, times: [] };
       state.lhbDate = date;
-      state.lhbCode = (state.lhbChart && state.lhbChart.hot[0] && state.lhbChart.hot[0].code) || null;
+      state.lhbCode = (state.lhb.hot && state.lhb.hot[0] && state.lhb.hot[0].code) || null;
       renderHot();
       renderAllLhb();
+
+      // 分时图单独补加载，不阻塞列表
+      fetch(`data/lhb/${date}-chart.json`, { cache: "force-cache" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((chart) => {
+          if (!chart || state.date !== date) return;
+          state.lhbChart = chart;
+          renderDetail();
+        })
+        .catch(() => {});
     } catch {
       state.lhb = null;
       state.lhbChart = null;

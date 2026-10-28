@@ -179,6 +179,11 @@ def build(date: str, data_dir: Path, top: int = 20) -> Path | None:
         "times": [t.split(" ")[-1] for t in times],
         "updatedAt": datetime.now(em.CST).isoformat(timespec="seconds"),
     }
+    lhb["hot"] = hot
+    (data_dir / dragon.LHB_DIR / f"{_norm(date)}.json").write_text(
+        json.dumps(lhb, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+
     out = data_dir / dragon.LHB_DIR / CHART_NAME.format(date=_norm(date))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

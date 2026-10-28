@@ -1151,3 +1151,98 @@ body:not(.view-ladder) .tools { display: none; }
 
 .bbar .bnum{font-size:10px;color:#c08a86;line-height:1}.bbar .btime{font-size:9px;color:#4d6f99;white-space:nowrap}
 
+
+/* ---------------------------------------------------------------- 龙虎榜复盘 */
+.lhb-layout {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.hot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 760px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.hot-item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: rgba(13, 26, 45, 0.7);
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hot-item:hover { border-color: rgba(56, 214, 255, 0.45); }
+.hot-item[aria-selected="true"] {
+  border-color: var(--cyan);
+  background: rgba(47, 129, 247, 0.16);
+  box-shadow: 0 0 18px -10px rgba(56, 214, 255, 0.9);
+}
+
+.hot-rank { color: #4d6f99; font-size: 11px; line-height: 1.6; }
+.hot-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hot-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.hot-top b { color: #eaf4ff; font-size: 13.5px; font-weight: 700; }
+.hot-top em { font-style: normal; color: #38d6ff; font-size: 11px; white-space: nowrap; }
+.hot-meta { color: #6d86a6; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hot-bar { display: block; height: 3px; border-radius: 2px; background: #122a44; overflow: hidden; }
+.hot-bar i { display: block; height: 100%; background: linear-gradient(90deg, #2f81f7, #38d6ff); }
+
+.hot-detail {
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0e1c31 0%, #0a1526 100%);
+  min-width: 0;
+}
+
+.hd-title { display: flex; align-items: baseline; gap: 10px; }
+.hd-title b { font-size: 24px; color: #f4f9ff; }
+.hd-title small { color: #4d6f99; font-size: 12px; }
+.hd-pct { margin-left: auto; font-size: 18px; font-weight: 700; }
+.hd-pct.up { color: #e0635c; }
+.hd-pct.down { color: #4f9d78; }
+
+.hd-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+
+.hd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px; }
+.hd-stats dt { color: #5b7391; font-size: 11px; }
+.hd-stats dd { margin: 2px 0 0; color: #e7f0fb; font-size: 15px; font-weight: 700; }
+
+.hd-chart { margin: 6px 0 4px; }
+.price-chart { width: 100%; height: auto; display: block; }
+.hd-empty { color: #5b7391; font-size: 12px; text-align: center; padding: 30px 0; }
+
+.hd-events { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+.ev { padding: 2px 8px; border-radius: 5px; font-size: 11px; background: rgba(47, 129, 247, 0.1); color: #9dc0e8; }
+.ev-first { background: rgba(255, 209, 102, 0.14); color: #ffd166; }
+.ev-last { background: rgba(56, 214, 255, 0.14); color: #38d6ff; }
+.ev-break { background: rgba(255, 107, 107, 0.12); color: #e08a84; }
+.ev-note { background: rgba(100, 120, 143, 0.12); color: #8fa3ba; }
+
+.hd-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.seat-note { grid-column: 1 / -1; margin: 2px 0 0; color: #4d6f99; font-size: 10.5px; line-height: 1.5; }
+.seat-row.in b { color: #38d6ff; }
+.seat-row.out b { color: #c98a83; }
+
+.all-lhb { margin-top: 14px; border: 1px solid var(--line); border-radius: 10px; background: rgba(13, 26, 45, 0.6); padding: 10px 14px; }
+.all-lhb summary { cursor: pointer; color: #8ba5c3; font-size: 13px; }
+.all-lhb .lhb-list { margin-top: 10px; }
+
+@media (max-width: 900px) {
+  .lhb-layout { grid-template-columns: 1fr; }
+  .hot-list { max-height: 300px; }
+  .hd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hd-seats { grid-template-columns: 1fr; }
+}

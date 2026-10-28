@@ -948,44 +948,231 @@
     });
   }
 
-  /* ------------------------------------------------------------ 龙虎榜 */
+  /* ------------------------------------------------------------ 龙虎榜复盘 */
   async function loadLhb() {
     const date = state.date;
-    const box = $("#lhbList");
     if (!date) return;
     if (state.lhbDate === date && state.lhb) {
-      renderLhb(state.lhb);
+      renderHot();
       return;
     }
-    box.textContent = "加载中…";
+    $("#hotList").textContent = "加载中…";
     try {
-      const res = await fetch(`data/lhb/${date}.json`, { cache: "no-cache" });
+      const [res, chartRes] = await Promise.all([
+        fetch(`data/lhb/${date}.json`, { cache: "no-cache" }),
+        fetch(`data/lhb/${date}-chart.json`, { cache: "no-cache" }),
+      ]);
       if (!res.ok) throw new Error("no data");
       state.lhb = await res.json();
+      state.lhbChart = chartRes.ok ? await chartRes.json() : null;
       state.lhbDate = date;
-      renderLhb(state.lhb);
+      state.lhbCode = (state.lhbChart && state.lhbChart.hot[0] && state.lhbChart.hot[0].code) || null;
+      renderHot();
+      renderAllLhb();
     } catch {
       state.lhb = null;
+      state.lhbChart = null;
       state.lhbDate = date;
-      box.textContent = "这一天还没有龙虎榜数据（交易所盘后披露，约 18:00 后生成）。";
+      $("#hotList").textContent = "";
+      $("#hdHead").textContent = "";
+      $("#hdChart").textContent = "";
+      $("#lhbMeta").textContent = "这一天还没有龙虎榜数据（交易所盘后披露，约 18:00 后生成）。";
     }
   }
 
-  function renderLhb(payload) {
-    const box = $("#lhbList");
+  function renderHot() {
+    const chart = state.lhbChart;
+    const box = $("#hotList");
     box.textContent = "";
-    const stocks = payload.stocks || [];
-    if (!stocks.length) {
-      box.textContent = "当天没有龙虎榜个股。";
+    if (!chart || !chart.hot || !chart.hot.length) {
+      box.textContent = "暂无热度数据";
       return;
     }
+    const maxHeat = Math.max(...chart.hot.map((h) => h.heat), 1);
+    chart.hot.forEach((h, i) => {
+      const item = el("button", { class: "hot-item", type: "button", "data-code": h.code });
+      item.setAttribute("aria-selected", String(h.code === state.lhbCode));
+      const rank = el("span", { class: "hot-rank", text: String(i + 1) });
+      const main = el("span", { class: "hot-main" });
+      const top = el("span", { class: "hot-top" });
+      top.append(el("b", { text: h.name }));
+      top.append(el("em", { text: h.board ? (h.board === 1 ? "首板" : `${h.board}板`) : fmtPct(h.pct) }));
+      main.append(top);
+      const meta = el("span", { class: "hot-meta" });
+      meta.append(document.createTextNode(`成交 ${h.amount}亿 · 净买 ${h.net > 0 ? "+" : ""}${h.net}亿`));
+      main.append(meta);
+      const bar = el("span", { class: "hot-bar" });
+      const fill = el("i");
+      fill.style.width = `${Math.max(6, (h.heat / maxHeat) * 100)}%`;
+      bar.append(fill);
+      main.append(bar);
+      item.append(rank, main);
+      item.addEventListener("click", () => {
+        state.lhbCode = h.code;
+        document.querySelectorAll(".hot-item").forEach((n) => n.setAttribute("aria-selected", "false"));
+        item.setAttribute("aria-selected", "true");
+        renderDetail();
+      });
+      box.append(item);
+    });
+    renderDetail();
+  }
+
+  function renderDetail() {
+    const chart = state.lhbChart;
+    const code = state.lhbCode;
+    const head = $("#hdHead");
+    head.textContent = "";
+    if (!chart || !code) return;
+    const hot = chart.hot.find((h) => h.code === code);
+    if (!hot) return;
+
+    const lhbStock = (state.lhb.stocks || []).find((s) => s.code === code) || {};
+    $("#lhbMeta").textContent = `${chart.date} · 龙虎榜 ${state.lhb.stocks.length} 家 · 热度 Top ${chart.hot.length} · 点击左侧切换个股`;
+
+    const title = el("div", { class: "hd-title" });
+    title.append(el("b", { text: hot.name }), el("small", { text: hot.code }));
+    title.append(el("span", { class: `hd-pct ${hot.pct >= 0 ? "up" : "down"}`, text: fmtPct(hot.pct) }));
+    head.append(title);
+
+    const chips = el("div", { class: "hd-chips" });
+    chips.append(el("span", { class: "tag is-red", text: hot.board ? (hot.board === 1 ? "首板 · 封板" : `${hot.board} 板 · 封板`) : "未封板" }));
+    if (hot.reason) chips.append(el("span", { class: "tag", text: hot.reason }));
+    head.append(chips);
+
+    const stats = el("div", { class: "hd-stats" });
+    [
+      ["热度", hot.heat],
+      ["成交额", `${hot.amount} 亿`],
+      ["龙虎榜净买", `${hot.net > 0 ? "+" : ""}${hot.net} 亿`],
+      ["换手率", `${hot.turnover}%`],
+    ].forEach(([k, v]) => {
+      const d = el("div");
+      d.append(el("dt", { text: k }), el("dd", { text: String(v) }));
+      stats.append(d);
+    });
+    head.append(stats);
+
+    const chartBox = $("#hdChart");
+    chartBox.textContent = "";
+    const data = chart.charts[code];
+    if (data && data.points.length > 2) {
+      chartBox.append(priceChartSvg(data.points, data.events || [], chart.times || []));
+    } else {
+      chartBox.append(el("p", { class: "hd-empty", text: "这一天没有分时数据（可能停牌或数据源缺失）" }));
+    }
+
+    // 事件
+    const evBox = $("#hdEvents");
+    evBox.textContent = "";
+    (data && data.events ? data.events.filter((e) => e.i >= 0) : []).forEach((e) => {
+      const time = (chart.times && chart.times[e.i]) || "";
+      evBox.append(el("span", { class: `ev ev-${e.kind}`, text: `${e.label}` }));
+    });
+    (data && data.events ? data.events.filter((e) => e.i < 0) : []).forEach((e) => {
+      evBox.append(el("span", { class: "ev ev-note", text: e.label }));
+    });
+    if (!evBox.children.length) evBox.append(el("span", { class: "ev ev-note", text: "当日无封板记录" }));
+
+    // 席位
+    const seatBox = $("#hdSeats");
+    seatBox.textContent = "";
+    const seats = (lhbStock.seats) || {};
+    const col = (title, rows, pick, cls) => {
+      const box = el("div", { class: "seat-col" });
+      box.append(el("h4", { text: title }));
+      (rows || []).forEach((row) => {
+        const r = el("div", { class: `seat-row ${cls}` });
+        r.append(el("span", { text: row[0] }));
+        r.append(el("b", { text: fmtWan(row[pick]) }));
+        box.append(r);
+      });
+      if (!(rows || []).length) box.append(el("div", { class: "seat-row", text: "无席位数据" }));
+      return box;
+    };
+    seatBox.append(col("买入前五（当日合计）", seats.b, 3, "in"), col("卖出前五（当日合计）", seats.s, 2, "out"));
+    seatBox.append(el("p", { class: "seat-note", text: "席位为交易所盘后披露的当日合计，不含下单时间；时间轴上的点位来自分时成交，二者不可对应。" }));
+  }
+
+  function priceChartSvg(points, events, times) {
+    const W = 820;
+    const H = 300;
+    const padL = 8;
+    const padR = 58;
+    const padT = 34;
+    const volH = 58;
+    const priceBottom = H - volH - 18;
+    const n = Math.max(...points.map((p) => p[0])) + 1;
+    const prices = points.map((p) => p[1]);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const span = max - min || 1;
+    const volMax = Math.max(...points.map((p) => p[2]), 1);
+    const x = (i) => padL + (i / Math.max(n - 1, 1)) * (W - padL - padR);
+    const y = (v) => padT + (1 - (v - min) / span) * (priceBottom - padT);
+
+    const line = points.map(([i, v], k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const area = `${line} L${x(points[points.length - 1][0]).toFixed(1)},${priceBottom} L${x(points[0][0]).toFixed(1)},${priceBottom} Z`;
+
+    const volBars = points
+      .map(([i, , v]) => {
+        const h = Math.max(1, (v / volMax) * volH);
+        return `<rect x="${(x(i) - 1).toFixed(1)}" y="${(H - 18 - h).toFixed(1)}" width="1.6" height="${h.toFixed(1)}" fill="rgba(47,129,247,0.55)" />`;
+      })
+      .join("");
+
+    const marks = events
+      .filter((e) => e.i >= 0 && e.i < n)
+      .map((e) => {
+        const color = e.kind === "first" ? "#ffd166" : e.kind === "last" ? "#38d6ff" : "#ff6b6b";
+        return `<line x1="${x(e.i).toFixed(1)}" y1="${padT}" x2="${x(e.i).toFixed(1)}" y2="${priceBottom}" stroke="${color}" stroke-dasharray="3 3" stroke-opacity="0.55" />
+                <circle cx="${x(e.i).toFixed(1)}" cy="${padT}" r="2.6" fill="${color}" />
+                <text x="${x(e.i).toFixed(1)}" y="${padT - 8}" fill="${color}" font-size="9" text-anchor="middle">${e.label.split(" ")[0]}</text>`;
+      })
+      .join("");
+
+    const xTicks = [0, 60, 120, 180, 240]
+      .map((i) => {
+        const label = (times && times[i]) || "";
+        const anchor = i === 0 ? "start" : i === 240 ? "end" : "middle";
+        return `<text x="${x(i).toFixed(1)}" y="${H - 4}" fill="#4d6f99" font-size="9" text-anchor="${anchor}">${label}</text>`;
+      })
+      .join("");
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("class", "price-chart");
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="rgba(56,214,255,0.28)" />
+          <stop offset="100%" stop-color="rgba(56,214,255,0)" />
+        </linearGradient>
+      </defs>
+      <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#16283f" stroke-width="1" />
+      <line x1="${padL}" y1="${priceBottom}" x2="${W - padR}" y2="${priceBottom}" stroke="#16283f" stroke-width="1" />
+      <path d="${area}" fill="url(#pg)" />
+      <path d="${line}" fill="none" stroke="#38d6ff" stroke-width="1.5" stroke-linejoin="round" />
+      ${volBars}
+      ${marks}
+      ${xTicks}
+      <text x="${W - padR + 6}" y="${padT + 4}" fill="#5b7391" font-size="9">${max.toFixed(2)}</text>
+      <text x="${W - padR + 6}" y="${priceBottom}" fill="#5b7391" font-size="9">${min.toFixed(2)}</text>
+    `;
+    return svg;
+  }
+
+  function renderAllLhb() {
+    const box = $("#lhbList");
+    box.textContent = "";
+    const stocks = (state.lhb && state.lhb.stocks) || [];
+    if (!stocks.length) return;
     const totalNet = stocks.reduce((sum, s) => sum + (s.net || 0), 0);
-    $("#lhbMeta").textContent = `${payload.date} 共 ${stocks.length} 家上榜 · 净买入合计 ${fmtWan(totalNet)} · 点击任意一行看买卖席位`;
+    $("#lhbMeta").textContent = `${state.lhb.date} 共 ${stocks.length} 家上榜 · 净买入合计 ${fmtWan(totalNet)}`;
 
     stocks.forEach((s) => {
       const wrap = el("div", { class: "lhb-row" });
       const head = el("button", { class: "lhb-head-row", type: "button" });
-
       const name = el("span", { class: "lhb-name" });
       name.append(document.createTextNode(s.name), el("small", { text: s.code }));
       head.append(name);
@@ -1008,11 +1195,9 @@
         return col;
       };
       seats.append(build("买入前五", s.seats && s.seats.b, 3), build("卖出前五", s.seats && s.seats.s, 2));
-
       head.addEventListener("click", () => {
         seats.hidden = !seats.hidden;
       });
-
       wrap.append(head, seats);
       box.append(wrap);
     });

@@ -57,11 +57,12 @@ def fetch_list(date: str) -> list[dict]:
     }
     rows = _get(params).get("data") or []
     out = []
+    seen: dict[str, dict] = {}
     for row in rows:
         code = row.get("SECURITY_CODE")
         if not code:
             continue
-        out.append(
+        item = (
             {
                 "code": code,
                 "name": row.get("SECURITY_NAME_ABBR"),
@@ -77,20 +78,27 @@ def fetch_list(date: str) -> list[dict]:
                 "explain": (row.get("EXPLAIN") or "").strip(),
             }
         )
+        if code in seen:
+            prev = seen[code]
+            if item["reason"] and item["reason"] not in prev["reason"]:
+                prev["reason"] = (prev["reason"] + " / " + item["reason"]).strip(" /")
+            continue
+        seen[code] = item
+        out.append(item)
     return out
 
 
 def fetch_seats(date: str, code: str) -> dict:
     target = f"{date[:4]}-{date[4:6]}-{date[6:]}"
 
-    def side(report: str) -> list[list]:
+    def side(report: str, sort_col: str = "BUY") -> list[list]:
         params = {
             "reportName": report,
             "columns": "ALL",
             "filter": f"(TRADE_DATE='{target}')(SECURITY_CODE=\"{code}\")",
             "pageNumber": 1,
             "pageSize": 5,
-            "sortColumns": "BUY",
+            "sortColumns": sort_col,
             "sortTypes": -1,
             "source": "WEB",
             "client": "WEB",
@@ -109,7 +117,10 @@ def fetch_seats(date: str, code: str) -> dict:
             for r in rows
         ]
 
-    return {"b": side("RPT_BILLBOARD_DAILYDETAILSBUY"), "s": side("RPT_BILLBOARD_DAILYDETAILSSELL")}
+    return {
+        "b": side("RPT_BILLBOARD_DAILYDETAILSBUY", "BUY"),
+        "s": side("RPT_BILLBOARD_DAILYDETAILSSELL", "SELL"),
+    }
 
 
 def build(date: str) -> dict | None:

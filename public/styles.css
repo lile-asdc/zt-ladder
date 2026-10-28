@@ -1246,3 +1246,127 @@ body:not(.view-ladder) .tools { display: none; }
   .hd-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hd-seats { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- 龙虎榜复盘 v2 */
+.lhb-summary {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: rgba(47, 129, 247, 0.07);
+  color: #a9c2de;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.hd-name {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #f4f9ff;
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.hd-name:hover { color: var(--cyan); }
+
+.chart-toggle {
+  float: right;
+  margin: -2px 0 4px 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: #8ba5c3;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.chart-toggle[aria-pressed="true"] {
+  border-color: var(--cyan);
+  background: rgba(56, 214, 255, 0.14);
+  color: #eaf7ff;
+}
+
+.seat-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-style: normal;
+  font-size: 10px;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+
+.tag-inst { background: rgba(56, 214, 255, 0.18); color: #8fe6ff; }
+.tag-north { background: rgba(46, 212, 122, 0.16); color: #6fe3a6; }
+.tag-hot { background: rgba(255, 209, 102, 0.18); color: #ffd166; }
+.tag-branch { background: rgba(100, 120, 143, 0.16); color: #8fa3ba; }
+
+.seat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-prob { color: #4d6f99; font-size: 10.5px; white-space: nowrap; }
+.seat-row { grid-template-columns: minmax(0, 1fr) 70px 78px; }
+
+.ev-spike { background: rgba(255, 209, 102, 0.12); color: #e3c07a; }
+
+.lhb-extra {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.ranklist { margin: 0; padding: 0; list-style: none; }
+.ranklist li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: #a6bcd8;
+  cursor: pointer;
+}
+.ranklist li:first-child { border-top: 0; }
+.ranklist li:hover { color: #fff; }
+.ranklist .idx { width: 30px; flex: 0 0 30px; color: #4d6f99; font-size: 11px; }
+.ranklist .nm { color: #e7f0fb; font-weight: 600; }
+.ranklist .meta { flex: 1 1 auto; color: #5b7391; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranklist .sc { color: var(--cyan); font-weight: 700; }
+
+/* 个股独立页 */
+.stock-page {
+  padding: 18px 20px 22px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #0e1c31 0%, #0a1526 100%);
+}
+
+.back-btn {
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: #8ba5c3;
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 4px 12px;
+  cursor: pointer;
+  margin-bottom: 14px;
+}
+
+.back-btn:hover { border-color: var(--cyan); color: #eaf7ff; }
+
+.sp-head h2 { margin: 0 0 4px; font-size: 30px; color: #f4f9ff; }
+.sp-head span { color: #4d6f99; font-size: 13px; }
+.sp-meta { margin: 6px 0 0; color: #8ba5c3; font-size: 12.5px; }
+.sp-seats { margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.sp-seats h3 { grid-column: 1 / -1; margin: 0 0 4px; font-size: 13px; color: #9fb6d3; }
+
+@media (max-width: 900px) {
+  .lhb-extra { grid-template-columns: 1fr; }
+  .sp-seats { grid-template-columns: 1fr; }
+}

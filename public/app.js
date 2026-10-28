@@ -14,6 +14,7 @@
     view: "ladder",
     lhb: null,
     lhbDate: null,
+    compareIndex: false,
     installPrompt: null,
   };
 
@@ -63,6 +64,11 @@
 
   const dateFromHash = () => {
     const m = /^#(\d{4}-\d{2}-\d{2})$/.exec(location.hash);
+    return m ? m[1] : null;
+  };
+
+  const stockFromHash = () => {
+    const m = /^#stock\/(\w+)$/.exec(location.hash);
     return m ? m[1] : null;
   };
 
@@ -802,12 +808,23 @@
     document.querySelectorAll(".tab").forEach((t) => {
       t.setAttribute("aria-selected", String(t.dataset.view === name));
     });
-    ["ladder", "review", "lhb"].forEach((v) => {
-      document.getElementById(`view-${v}`).hidden = v !== name;
+    ["ladder", "review", "lhb", "stock"].forEach((v) => {
+      const node = document.getElementById(`view-${v}`);
+      if (node) node.hidden = v !== name;
     });
     document.body.classList.toggle("view-ladder", name === "ladder");
     if (name === "review" && state.data) renderReview(state.data, state.index);
     if (name === "lhb") loadLhb();
+  }
+
+  function switchViewRaw(name) {
+    state.view = name;
+    document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", "false"));
+    ["ladder", "review", "lhb", "stock"].forEach((v) => {
+      const node = document.getElementById(`view-${v}`);
+      if (node) node.hidden = v !== name;
+    });
+    document.body.classList.toggle("view-ladder", false);
   }
 
   /* ------------------------------------------------------------ 复盘看板 */
@@ -949,6 +966,8 @@
   }
 
   /* ------------------------------------------------------------ 龙虎榜复盘 */
+  const TAG_CLASS = { 机构: "tag-inst", 北向: "tag-north", 游资: "tag-hot", 营业部: "tag-branch" };
+
   async function loadLhb() {
     const date = state.date;
     if (!date) return;
@@ -961,19 +980,18 @@
       const res = await fetch(`data/lhb/${date}.json`, { cache: "no-cache" });
       if (!res.ok) throw new Error("no data");
       state.lhb = await res.json();
-      state.lhbChart = { date: state.lhb.date, hot: state.lhb.hot || [], charts: {}, times: [] };
+      state.lhbChart = { date: state.lhb.date, hot: state.lhb.hot || [], charts: {}, index: [], summary: null, streak: [] };
       state.lhbDate = date;
       state.lhbCode = (state.lhb.hot && state.lhb.hot[0] && state.lhb.hot[0].code) || null;
       renderHot();
       renderAllLhb();
 
-      // 分时图单独补加载，不阻塞列表
       fetch(`data/lhb/${date}-chart.json`, { cache: "force-cache" })
         .then((r) => (r.ok ? r.json() : null))
         .then((chart) => {
           if (!chart || state.date !== date) return;
           state.lhbChart = chart;
-          renderDetail();
+          renderHot();
         })
         .catch(() => {});
     } catch {
@@ -983,7 +1001,7 @@
       $("#hotList").textContent = "";
       $("#hdHead").textContent = "";
       $("#hdChart").textContent = "";
-      $("#lhbMeta").textContent = "这一天还没有龙虎榜数据（交易所盘后披露，约 18:00 后生成）。";
+      $("#lhbSummary").textContent = "这一天还没有龙虎榜数据（交易所盘后披露，约 18:00 后生成）。";
     }
   }
 
@@ -999,21 +1017,20 @@
     chart.hot.forEach((h, i) => {
       const item = el("button", { class: "hot-item", type: "button", "data-code": h.code });
       item.setAttribute("aria-selected", String(h.code === state.lhbCode));
-      const rank = el("span", { class: "hot-rank", text: String(i + 1) });
+      item.append(el("span", { class: "hot-rank", text: String(i + 1) }));
       const main = el("span", { class: "hot-main" });
       const top = el("span", { class: "hot-top" });
       top.append(el("b", { text: h.name }));
       top.append(el("em", { text: h.board ? (h.board === 1 ? "首板" : `${h.board}板`) : fmtPct(h.pct) }));
+      if (h.broken) top.classList.add("is-broken");
       main.append(top);
-      const meta = el("span", { class: "hot-meta" });
-      meta.append(document.createTextNode(`成交 ${h.amount}亿 · 净买 ${h.net > 0 ? "+" : ""}${h.net}亿`));
-      main.append(meta);
+      main.append(el("span", { class: "hot-meta", text: `成交 ${h.amount}亿 · 净买 ${h.net > 0 ? "+" : ""}${h.net}亿` }));
       const bar = el("span", { class: "hot-bar" });
       const fill = el("i");
       fill.style.width = `${Math.max(6, (h.heat / maxHeat) * 100)}%`;
       bar.append(fill);
       main.append(bar);
-      item.append(rank, main);
+      item.append(main);
       item.addEventListener("click", () => {
         state.lhbCode = h.code;
         document.querySelectorAll(".hot-item").forEach((n) => n.setAttribute("aria-selected", "false"));
@@ -1022,7 +1039,56 @@
       });
       box.append(item);
     });
+
+    renderSummary(chart);
+    renderRankLists(chart);
     renderDetail();
+  }
+
+  function renderSummary(chart) {
+    const box = $("#lhbSummary");
+    box.textContent = "";
+    if (chart.summary && chart.summary.text) {
+      box.textContent = chart.summary.text;
+      return;
+    }
+    if (state.lhb) {
+      box.textContent = `${state.lhb.date} 共 ${state.lhb.stocks.length} 家上榜`;
+    }
+  }
+
+  function renderRankLists(chart) {
+    const inst = $("#instList");
+    inst.textContent = "";
+    const instRank = [...(chart.hot || [])].filter((h) => h.instNet).sort((a, b) => b.instNet - a.instNet).slice(0, 8);
+    if (!instRank.length) inst.append(el("li", { text: "今日无机构席位上榜" }));
+    instRank.forEach((h, i) => {
+      const li = el("li");
+      li.append(el("span", { class: "idx", text: String(i + 1) }));
+      li.append(el("span", { class: "nm", text: h.name }));
+      li.append(el("span", { class: "meta", text: `${h.board ? h.board + "板 · " : ""}${h.concentration ?? "—"}% 首位` }));
+      li.append(el("span", { class: "sc", text: `${h.instNet > 0 ? "+" : ""}${h.instNet} 亿` }));
+      li.addEventListener("click", () => {
+        state.lhbCode = h.code;
+        document.querySelectorAll(".hot-item").forEach((n) => n.setAttribute("aria-selected", String(n.dataset.code === h.code)));
+        renderDetail();
+      });
+      inst.append(li);
+    });
+
+    const streak = $("#streakList");
+    streak.textContent = "";
+    const rows = (chart.streak || []).slice(0, 8);
+    if (!rows.length) streak.append(el("li", { text: "暂无连续上榜记录" }));
+    rows.forEach((s) => {
+      const li = el("li");
+      li.append(el("span", { class: "idx", text: `${s.days}天` }));
+      li.append(el("span", { class: "nm", text: s.name }));
+      li.append(el("span", { class: "meta", text: s.code }));
+      li.append(el("span", { class: "sc", text: `${s.net > 0 ? "+" : ""}${s.net} 亿` }));
+      li.addEventListener("click", () => openStockPage(s.code));
+      streak.append(li);
+    });
   }
 
   function renderDetail() {
@@ -1031,19 +1097,27 @@
     const head = $("#hdHead");
     head.textContent = "";
     if (!chart || !code) return;
-    const hot = chart.hot.find((h) => h.code === code);
+    const hot = (chart.hot || []).find((h) => h.code === code);
     if (!hot) return;
-
-    const lhbStock = (state.lhb.stocks || []).find((s) => s.code === code) || {};
-    $("#lhbMeta").textContent = `${chart.date} · 龙虎榜 ${state.lhb.stocks.length} 家 · 热度 Top ${chart.hot.length} · 点击左侧切换个股`;
+    const lhbStock = ((state.lhb && state.lhb.stocks) || []).find((s) => s.code === code) || {};
 
     const title = el("div", { class: "hd-title" });
-    title.append(el("b", { text: hot.name }), el("small", { text: hot.code }));
+    const nameBtn = el("button", { class: "hd-name", type: "button", title: "打开个股独立页" });
+    nameBtn.append(document.createTextNode(hot.name));
+    nameBtn.addEventListener("click", () => openStockPage(code));
+    title.append(nameBtn, el("small", { text: hot.code }));
     title.append(el("span", { class: `hd-pct ${hot.pct >= 0 ? "up" : "down"}`, text: fmtPct(hot.pct) }));
     head.append(title);
 
     const chips = el("div", { class: "hd-chips" });
-    chips.append(el("span", { class: "tag is-red", text: hot.board ? (hot.board === 1 ? "首板 · 封板" : `${hot.board} 板 · 封板`) : "未封板" }));
+    chips.append(
+      el("span", {
+        class: hot.broken ? "tag is-broken" : "tag is-red",
+        text: hot.board ? `${hot.board} 板 · ${hot.broken ? "炸板" : "封板"}` : "未封板",
+      })
+    );
+    if (hot.instNet) chips.append(el("span", { class: "tag", text: `机构 ${hot.instNet > 0 ? "+" : ""}${hot.instNet} 亿` }));
+    if (hot.northNet) chips.append(el("span", { class: "tag", text: `北向 ${hot.northNet > 0 ? "+" : ""}${hot.northNet} 亿` }));
     if (hot.reason) chips.append(el("span", { class: "tag", text: hot.reason }));
     head.append(chips);
 
@@ -1052,7 +1126,7 @@
       ["热度", hot.heat],
       ["成交额", `${hot.amount} 亿`],
       ["龙虎榜净买", `${hot.net > 0 ? "+" : ""}${hot.net} 亿`],
-      ["换手率", `${hot.turnover}%`],
+      ["首位席位占比", hot.concentration != null ? `${hot.concentration}%` : "—"],
     ].forEach(([k, v]) => {
       const d = el("div");
       d.append(el("dt", { text: k }), el("dd", { text: String(v) }));
@@ -1062,35 +1136,50 @@
 
     const chartBox = $("#hdChart");
     chartBox.textContent = "";
-    const data = chart.charts[code];
-    if (data && data.points.length > 2) {
-      chartBox.append(priceChartSvg(data.points, data.events || [], chart.times || []));
+    const data = chart.charts && chart.charts[code];
+    const hasChart = data && data.points && data.points.length > 2;
+    if (hasChart) {
+      const toggle = el("button", { class: "chart-toggle", type: "button", "aria-pressed": String(state.compareIndex) });
+      toggle.textContent = "对比大盘";
+      toggle.addEventListener("click", () => {
+        state.compareIndex = !state.compareIndex;
+        toggle.setAttribute("aria-pressed", String(state.compareIndex));
+        renderDetail();
+      });
+      chartBox.append(toggle);
+      chartBox.append(priceChartSvg(data.points, data.events || [], data.spikes || [], chart.index || [], state.compareIndex));
     } else {
       chartBox.append(el("p", { class: "hd-empty", text: "这一天没有分时数据（可能停牌或数据源缺失）" }));
     }
 
-    // 事件
     const evBox = $("#hdEvents");
     evBox.textContent = "";
     (data && data.events ? data.events.filter((e) => e.i >= 0) : []).forEach((e) => {
-      const time = (chart.times && chart.times[e.i]) || "";
-      evBox.append(el("span", { class: `ev ev-${e.kind}`, text: `${e.label}` }));
+      evBox.append(el("span", { class: `ev ev-${e.kind}`, text: e.label }));
     });
     (data && data.events ? data.events.filter((e) => e.i < 0) : []).forEach((e) => {
       evBox.append(el("span", { class: "ev ev-note", text: e.label }));
     });
+    if (data && data.spikes && data.spikes.length) {
+      evBox.append(el("span", { class: "ev ev-spike", text: `放量 ${data.spikes.length} 次` }));
+    }
     if (!evBox.children.length) evBox.append(el("span", { class: "ev ev-note", text: "当日无封板记录" }));
 
-    // 席位
     const seatBox = $("#hdSeats");
     seatBox.textContent = "";
-    const seats = (lhbStock.seats) || {};
+    const seats = lhbStock.seats || {};
     const col = (title, rows, pick, cls) => {
       const box = el("div", { class: "seat-col" });
       box.append(el("h4", { text: title }));
       (rows || []).forEach((row) => {
         const r = el("div", { class: `seat-row ${cls}` });
-        r.append(el("span", { text: row[0] }));
+        const label = el("span", { class: "seat-name" });
+        const tag = row[5] || "营业部";
+        if (tag !== "营业部") label.append(el("i", { class: `seat-tag ${TAG_CLASS[tag] || ""}`, text: row[6] || tag }));
+        label.append(document.createTextNode(row[0]));
+        r.append(label);
+        const meta = el("span", { class: "seat-prob", text: row[4] != null ? `3日胜率 ${row[4]}%` : "" });
+        r.append(meta);
         r.append(el("b", { text: fmtWan(row[pick]) }));
         box.append(r);
       });
@@ -1101,48 +1190,84 @@
     seatBox.append(el("p", { class: "seat-note", text: "席位为交易所盘后披露的当日合计，不含下单时间；时间轴上的点位来自分时成交，二者不可对应。" }));
   }
 
-  function priceChartSvg(points, events, times) {
+  function priceChartSvg(points, events, spikes, indexPoints, compare) {
     const W = 820;
     const H = 300;
     const padL = 8;
     const padR = 58;
     const padT = 34;
-    const volH = 58;
+    const volH = 56;
     const priceBottom = H - volH - 18;
-    const n = Math.max(...points.map((p) => p[0])) + 1;
+    const X = (off) => padL + (off / 240) * (W - padL - padR);
+
     const prices = points.map((p) => p[1]);
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
+    let min = Math.min(...prices);
+    let max = Math.max(...prices);
+
+    let idxSeries = [];
+    if (compare && indexPoints && indexPoints.length > 2) {
+      const base = indexPoints[0][1];
+      idxSeries = indexPoints.map(([o, v]) => [o, ((v - base) / base) * 100]);
+      const stockBase = points[0][1];
+      const stockPct = points.map(([o, v]) => [o, ((v - stockBase) / stockBase) * 100]);
+      const lo = Math.min(...idxSeries.map((p) => p[1]), ...stockPct.map((p) => p[1]));
+      const hi = Math.max(...idxSeries.map((p) => p[1]), ...stockPct.map((p) => p[1]));
+      const spanP = hi - lo || 1;
+      const yP = (v) => padT + (1 - (v - lo) / spanP) * (priceBottom - padT);
+      const stockLine = stockPct.map(([o, v], k) => `${k ? "L" : "M"}${X(o).toFixed(1)},${yP(v).toFixed(1)}`).join(" ");
+      const idxLine = idxSeries.map(([o, v], k) => `${k ? "L" : "M"}${X(o).toFixed(1)},${yP(v).toFixed(1)}`).join(" ");
+      const volBars = points
+        .map(([o, , v]) => {
+          const h = Math.max(1, (v / Math.max(...points.map((p) => p[2]), 1)) * volH);
+          return `<rect x="${(X(o) - 1).toFixed(1)}" y="${(H - 18 - h).toFixed(1)}" width="2" height="${h.toFixed(1)}" fill="rgba(47,129,247,0.5)" />`;
+        })
+        .join("");
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.setAttribute("class", "price-chart");
+      svg.innerHTML = `
+        <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#16283f" />
+        <line x1="${padL}" y1="${priceBottom}" x2="${W - padR}" y2="${priceBottom}" stroke="#16283f" />
+        <path d="${idxLine}" fill="none" stroke="#6d86a6" stroke-width="1.2" stroke-dasharray="4 3" />
+        <path d="${stockLine}" fill="none" stroke="#38d6ff" stroke-width="1.6" />
+        ${volBars}
+        <text x="${W - padR + 6}" y="${padT + 4}" fill="#5b7391" font-size="9">${hi.toFixed(1)}%</text>
+        <text x="${W - padR + 6}" y="${priceBottom}" fill="#5b7391" font-size="9">${lo.toFixed(1)}%</text>
+        <text x="${padL + 4}" y="${padT - 16}" fill="#6d86a6" font-size="9">灰色虚线：上证指数</text>
+      `;
+      return svg;
+    }
+
     const span = max - min || 1;
     const volMax = Math.max(...points.map((p) => p[2]), 1);
-    const x = (i) => padL + (i / Math.max(n - 1, 1)) * (W - padL - padR);
     const y = (v) => padT + (1 - (v - min) / span) * (priceBottom - padT);
-
-    const line = points.map(([i, v], k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-    const area = `${line} L${x(points[points.length - 1][0]).toFixed(1)},${priceBottom} L${x(points[0][0]).toFixed(1)},${priceBottom} Z`;
-
+    const line = points.map(([o, v], k) => `${k ? "L" : "M"}${X(o).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const area = `${line} L${X(points[points.length - 1][0]).toFixed(1)},${priceBottom} L${X(points[0][0]).toFixed(1)},${priceBottom} Z`;
     const volBars = points
-      .map(([i, , v]) => {
+      .map(([o, , v]) => {
         const h = Math.max(1, (v / volMax) * volH);
-        return `<rect x="${(x(i) - 1).toFixed(1)}" y="${(H - 18 - h).toFixed(1)}" width="1.6" height="${h.toFixed(1)}" fill="rgba(47,129,247,0.55)" />`;
+        return `<rect x="${(X(o) - 1).toFixed(1)}" y="${(H - 18 - h).toFixed(1)}" width="2" height="${h.toFixed(1)}" fill="rgba(47,129,247,0.55)" />`;
       })
       .join("");
-
     const marks = events
-      .filter((e) => e.i >= 0 && e.i < n)
+      .filter((e) => e.i >= 0 && e.i <= 240)
       .map((e) => {
         const color = e.kind === "first" ? "#ffd166" : e.kind === "last" ? "#38d6ff" : "#ff6b6b";
-        return `<line x1="${x(e.i).toFixed(1)}" y1="${padT}" x2="${x(e.i).toFixed(1)}" y2="${priceBottom}" stroke="${color}" stroke-dasharray="3 3" stroke-opacity="0.55" />
-                <circle cx="${x(e.i).toFixed(1)}" cy="${padT}" r="2.6" fill="${color}" />
-                <text x="${x(e.i).toFixed(1)}" y="${padT - 8}" fill="${color}" font-size="9" text-anchor="middle">${e.label.split(" ")[0]}</text>`;
+        return `<line x1="${X(e.i).toFixed(1)}" y1="${padT}" x2="${X(e.i).toFixed(1)}" y2="${priceBottom}" stroke="${color}" stroke-dasharray="3 3" stroke-opacity="0.55" />
+                <circle cx="${X(e.i).toFixed(1)}" cy="${padT}" r="2.6" fill="${color}" />
+                <text x="${X(e.i).toFixed(1)}" y="${padT - 8}" fill="${color}" font-size="9" text-anchor="middle">${e.label.split(" ")[0]}</text>`;
       })
       .join("");
+    const spikeMarks = (spikes || [])
+      .map((s) => `<circle cx="${X(s.i).toFixed(1)}" cy="${H - 22}" r="2.2" fill="#ffd166" opacity="0.85" />`)
+      .join("");
 
-    const xTicks = [0, 60, 120, 180, 240]
-      .map((i) => {
-        const label = (times && times[i]) || "";
-        const anchor = i === 0 ? "start" : i === 240 ? "end" : "middle";
-        return `<text x="${x(i).toFixed(1)}" y="${H - 4}" fill="#4d6f99" font-size="9" text-anchor="${anchor}">${label}</text>`;
+    const ticks = [0, 60, 120, 180, 240]
+      .map((o) => {
+        const total = o <= 120 ? 570 + o : 780 + (o - 120);
+        const label = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+        const anchor = o === 0 ? "start" : o === 240 ? "end" : "middle";
+        return `<text x="${X(o).toFixed(1)}" y="${H - 4}" fill="#4d6f99" font-size="9" text-anchor="${anchor}">${label}</text>`;
       })
       .join("");
 
@@ -1156,13 +1281,14 @@
           <stop offset="100%" stop-color="rgba(56,214,255,0)" />
         </linearGradient>
       </defs>
-      <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#16283f" stroke-width="1" />
-      <line x1="${padL}" y1="${priceBottom}" x2="${W - padR}" y2="${priceBottom}" stroke="#16283f" stroke-width="1" />
+      <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#16283f" />
+      <line x1="${padL}" y1="${priceBottom}" x2="${W - padR}" y2="${priceBottom}" stroke="#16283f" />
       <path d="${area}" fill="url(#pg)" />
       <path d="${line}" fill="none" stroke="#38d6ff" stroke-width="1.5" stroke-linejoin="round" />
       ${volBars}
+      ${spikeMarks}
       ${marks}
-      ${xTicks}
+      ${ticks}
       <text x="${W - padR + 6}" y="${padT + 4}" fill="#5b7391" font-size="9">${max.toFixed(2)}</text>
       <text x="${W - padR + 6}" y="${priceBottom}" fill="#5b7391" font-size="9">${min.toFixed(2)}</text>
     `;
@@ -1174,9 +1300,6 @@
     box.textContent = "";
     const stocks = (state.lhb && state.lhb.stocks) || [];
     if (!stocks.length) return;
-    const totalNet = stocks.reduce((sum, s) => sum + (s.net || 0), 0);
-    $("#lhbMeta").textContent = `${state.lhb.date} 共 ${stocks.length} 家上榜 · 净买入合计 ${fmtWan(totalNet)}`;
-
     stocks.forEach((s) => {
       const wrap = el("div", { class: "lhb-row" });
       const head = el("button", { class: "lhb-head-row", type: "button" });
@@ -1194,7 +1317,12 @@
         col.append(el("h4", { text: title }));
         (rows || []).forEach((seat) => {
           const r = el("div", { class: "seat-row" });
-          r.append(el("span", { text: seat[0] }));
+          const label = el("span", { class: "seat-name" });
+          const tag = seat[5] || "营业部";
+          if (tag !== "营业部") label.append(el("i", { class: `seat-tag ${TAG_CLASS[tag] || ""}`, text: seat[6] || tag }));
+          label.append(document.createTextNode(seat[0]));
+          r.append(label);
+          r.append(el("span", { class: "seat-prob", text: seat[4] != null ? `${seat[4]}%` : "" }));
           r.append(el("b", { text: fmtWan(seat[pick]) }));
           col.append(r);
         });
@@ -1208,6 +1336,72 @@
       wrap.append(head, seats);
       box.append(wrap);
     });
+  }
+
+  /* ------------------------------------------------------------ 个股独立页 */
+  async function openStockPage(code) {
+    closeSheet();
+    const box = $("#stockPage");
+    box.textContent = "加载中…";
+    switchViewRaw("stock");
+    location.hash = `stock/${code}`;
+    const idx = await loadStocks();
+    const item = idx[code] || { name: code, hits: [] };
+    box.textContent = "";
+
+    const back = el("button", { class: "back-btn", type: "button", text: "← 返回龙虎榜" });
+    back.addEventListener("click", () => {
+      history.back();
+    });
+    box.append(back);
+
+    const head = el("div", { class: "sp-head" });
+    head.append(el("h2", { text: item.name }), el("span", { text: code }));
+    const hits = item.hits || [];
+    if (hits.length) {
+      const best = Math.max(...hits.map((h) => h[1]));
+      head.append(el("p", { class: "sp-meta", text: `近 ${hits.length} 次上榜 · 最高 ${best} 板 · 最近 ${hits[hits.length - 1][0]}` }));
+    }
+    box.append(head);
+
+    if (hits.length) {
+      const strip = el("div", { class: "hist-strip" });
+      hits.slice(-14).forEach(([d, height, , broken]) => {
+        const tag = el("span", { class: `hit${broken ? " is-broken" : ""}` });
+        tag.append(document.createTextNode(d.slice(5)), el("b", { text: height === 1 ? "首板" : `${height}板` }));
+        strip.append(tag);
+      });
+      box.append(strip);
+    }
+
+    // 最近一次上榜的席位
+    const lhb = state.lhb && state.lhb.date === state.date ? state.lhb : await (await fetch(`data/lhb/${state.date}.json`)).json().catch(() => null);
+    const record = lhb && (lhb.stocks || []).find((s) => s.code === code);
+    if (record) {
+      const sec = el("div", { class: "sp-seats" });
+      sec.append(el("h3", { text: `${lhb.date} 龙虎榜席位` }));
+      const col = (title, rows, pick) => {
+        const b = el("div", { class: "seat-col" });
+        b.append(el("h4", { text: title }));
+        (rows || []).forEach((row) => {
+          const r = el("div", { class: "seat-row" });
+          const label = el("span", { class: "seat-name" });
+          const tag = row[5] || "营业部";
+          if (tag !== "营业部") label.append(el("i", { class: `seat-tag ${TAG_CLASS[tag] || ""}`, text: row[6] || tag }));
+          label.append(document.createTextNode(row[0]));
+          r.append(label);
+          r.append(el("span", { class: "seat-prob", text: row[4] != null ? `${row[4]}%` : "" }));
+          r.append(el("b", { text: fmtWan(row[pick]) }));
+          b.append(r);
+        });
+        if (!(rows || []).length) b.append(el("div", { class: "seat-row", text: "无席位数据" }));
+        return b;
+      };
+      sec.append(col("买入前五", record.seats && record.seats.b, 3), col("卖出前五", record.seats && record.seats.s, 2));
+      box.append(sec);
+    } else {
+      box.append(el("p", { class: "hd-empty", text: "该股当日未上龙虎榜" }));
+    }
   }
 
   /* ------------------------------------------------------------ 事件绑定 */
@@ -1266,8 +1460,14 @@
     document.querySelectorAll("[data-close]").forEach((node) => node.addEventListener("click", closeSheet));
 
     window.addEventListener("popstate", () => {
+      const sc = stockFromHash();
+      if (sc) {
+        openStockPage(sc);
+        return;
+      }
       const d = dateFromHash();
       if (d && d !== state.date) goto(d, { push: false });
+      else if (!d && state.view === "stock") switchView("lhb");
     });
 
     window.addEventListener("beforeinstallprompt", (e) => {
@@ -1295,6 +1495,8 @@
       const wanted = dateFromHash();
       const date = days.some((d) => d.date === wanted) ? wanted : state.index.latest;
       await goto(date, { push: false });
+      const stockCode = stockFromHash();
+      if (stockCode) openStockPage(stockCode);
     } catch (err) {
       console.error(err);
       $("#empty").hidden = false;

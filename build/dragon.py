@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 import em
+import seats as seats_mod
 
 BASE = "http://datacenter-web.eastmoney.com/api/data/v1/get"
 REF = "http://data.eastmoney.com/"
@@ -113,6 +114,7 @@ def fetch_seats(date: str, code: str) -> dict:
                 _wan(r.get("BUY")),
                 _wan(r.get("SELL")),
                 _wan(r.get("NET")),
+                round(float(r["RISE_PROBABILITY_3DAY"]), 1) if r.get("RISE_PROBABILITY_3DAY") is not None else None,
             ]
             for r in rows
         ]
@@ -123,7 +125,7 @@ def fetch_seats(date: str, code: str) -> dict:
     }
 
 
-def build(date: str) -> dict | None:
+def build(date: str, data_dir: Path) -> dict | None:
     stocks = fetch_list(date)
     if not stocks:
         return None
@@ -131,7 +133,7 @@ def build(date: str) -> dict | None:
     with ThreadPoolExecutor(max_workers=6) as pool:
         seats = list(pool.map(lambda c: fetch_seats(date, c), codes))
     for stock, seat in zip(stocks, seats):
-        stock["seats"] = seat
+        stock["seats"] = seats_mod.tag_seats(seat, data_dir)
     return {
         "date": f"{date[:4]}-{date[4:6]}-{date[6:]}",
         "stocks": stocks,
@@ -160,7 +162,7 @@ def load(date: str, data_dir: Path) -> dict | None:
 def build_and_save(date: str, data_dir: Path, retries: int = 2) -> Path | None:
     for attempt in range(retries):
         try:
-            payload = build(date)
+            payload = build(date, data_dir)
         except em.SourceError:
             payload = None
         if payload:

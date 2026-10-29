@@ -16,6 +16,7 @@
     lhbDate: null,
     compareIndex: false,
     prob: null,
+    patterns: null,
     fundflow: undefined,
     unlock: undefined,
     installPrompt: null,
@@ -1163,6 +1164,7 @@
   async function loadProb() {
     if (state.prob) {
       renderProb(state.prob);
+      loadPatterns();
       return;
     }
     $("#probSummary").textContent = "加载中…";
@@ -1171,9 +1173,50 @@
       if (!res.ok) throw new Error("no data");
       state.prob = await res.json();
       renderProb(state.prob);
+      loadPatterns();
     } catch {
       $("#probSummary").textContent = "概率数据尚未生成。";
     }
+  }
+
+  async function loadPatterns() {
+    if (state.patterns) {
+      renderPatterns(state.patterns);
+      return;
+    }
+    try {
+      const res = await fetch("data/patterns.json", { cache: "no-cache" });
+      if (!res.ok) throw new Error("no data");
+      state.patterns = await res.json();
+      renderPatterns(state.patterns);
+    } catch {
+      $("#patternTable").textContent = "形态数据尚未生成";
+    }
+  }
+
+  function renderPatterns(payload) {
+    const box = $("#patternTable");
+    box.textContent = "";
+    const head = el("div", { class: "pt-row pt-row6 pt-head" });
+    ["形态", "样本", "次日胜率", "次日均值", "超额胜率", "超额均值"].forEach((t) => head.append(el("span", { text: t })));
+    box.append(head);
+    (payload.rows || []).forEach((r) => {
+      const line = el("div", { class: "pt-row pt-row6" });
+      line.append(el("span", { class: "pt-name", text: r.name }));
+      line.append(el("span", { class: "pt-num", text: String(r.n) }));
+      line.append(el("span", { class: "pt-num", text: `${r.win1}%` }));
+      line.append(el("span", { class: `pt-num ${r.avg1 >= 0 ? "up" : "down"}`, text: `${r.avg1 > 0 ? "+" : ""}${r.avg1}%` }));
+      line.append(el("span", { class: "pt-num", text: r.winX != null ? `${r.winX}%` : "—" }));
+      line.append(el("span", { class: `pt-num ${r.avgX >= 0 ? "up" : "down"}`, text: r.avgX != null ? `${r.avgX > 0 ? "+" : ""}${r.avgX}%` : "—" }));
+      box.append(line);
+    });
+    if (payload.stocks)
+      box.append(
+        el("p", {
+          class: "prob-note",
+          text: `全市场 ${payload.stocks} 只个股、约 90 个交易日；超额 = 个股涨跌 − 当日上证涨跌`,
+        })
+      );
   }
 
   function renderProb(prob) {

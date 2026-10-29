@@ -247,7 +247,7 @@ def first_board_premium(day: dict, data_dir: Path) -> dict:
         bar = kline.bar_after(stock["code"], data_dir, day["date"])
         if not bar:
             continue
-        _, o, h, _, c = bar
+        o, h, c = bar[1], bar[2], bar[4]
         base = kline.close_on(stock["code"], data_dir, day["date"])
         if not base:
             continue

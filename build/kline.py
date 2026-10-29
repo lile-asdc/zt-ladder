@@ -39,7 +39,14 @@ def _fetch_tencent(code: str, count: int = 90) -> list[list]:
         if len(row) < 5:
             continue
         try:
-            out.append([row[0], round(float(row[1]), 2), round(float(row[3]), 2), round(float(row[4]), 2), round(float(row[2]), 2)])
+            out.append([
+                row[0],
+                round(float(row[1]), 2),
+                round(float(row[3]), 2),
+                round(float(row[4]), 2),
+                round(float(row[2]), 2),
+                round(float(row[5]), 0) if len(row) > 5 else 0,
+            ])
         except (TypeError, ValueError):
             continue
     return out
@@ -66,6 +73,7 @@ def _fetch_sina(code: str, count: int = 90) -> list[list]:
                     round(float(row["high"]), 2),
                     round(float(row["low"]), 2),
                     round(float(row["close"]), 2),
+                    round(float(row["volume"] or 0), 0),
                 ]
             )
         except (KeyError, TypeError, ValueError):

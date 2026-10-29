@@ -1536,3 +1536,11 @@ body:not(.view-ladder) .tools { display: none; }
   .watch li { grid-template-columns: 16px minmax(0, 1fr) 34px 54px; }
   .w-meta { display: none; }
 }
+
+.pt-row6 { grid-template-columns: minmax(0, 1.2fr) 62px 62px 66px 62px 66px; }
+.pt-num.up { color: #38d6ff; }
+.pt-num.down { color: #c98a83; }
+@media (max-width: 760px) {
+  .pt-row6 { grid-template-columns: minmax(0, 1fr) 52px 56px 60px; }
+  .pt-row6 span:nth-child(5), .pt-row6 span:nth-child(6) { display: none; }
+}

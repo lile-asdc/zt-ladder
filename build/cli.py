@@ -16,7 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import analytics
 import dragon
 import em
+import fundflow
 import lhb_chart
+import unlock
 import payload as pl
 
 
@@ -87,6 +89,8 @@ def cmd_daily() -> None:
             dragon.build_and_save(today, pl.DATA_DIR)
             lhb_chart.build(today, pl.DATA_DIR)
             lhb_chart.build_history(pl.DATA_DIR)
+            unlock.build(pl.DATA_DIR)
+            fundflow.build(pl.DATA_DIR)
         except Exception as exc:  # noqa: BLE001 - 龙虎榜失败不影响主流程
             print(f"[warn] 龙虎榜抓取失败：{exc}")
     pl.rebuild_index()

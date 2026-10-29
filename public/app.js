@@ -15,6 +15,8 @@
     lhb: null,
     lhbDate: null,
     compareIndex: false,
+    fundflow: undefined,
+    unlock: undefined,
     installPrompt: null,
   };
 
@@ -230,7 +232,7 @@
     checkPng(data.date);
     prefetchNeighbours();
     if (state.view === "review") {
-      loadPrevDay(data).then(() => renderReview(data, state.index));
+      Promise.all([loadPrevDay(data), loadExtras()]).then(() => renderReview(data, state.index));
     }
     if (state.view === "lhb") {
       state.lhb = null;
@@ -816,7 +818,7 @@
     });
     document.body.classList.toggle("view-ladder", name === "ladder");
     if (name === "review" && state.data) {
-      loadPrevDay(state.data).then(() => renderReview(state.data, state.index));
+      Promise.all([loadPrevDay(state.data), loadExtras()]).then(() => renderReview(state.data, state.index));
     }
     if (name === "lhb") loadLhb();
   }
@@ -838,6 +840,19 @@
     if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(2)} 亿`;
     return `${n.toFixed(0)} 万`;
   };
+
+  async function loadExtras() {
+    const grab = async (name) => {
+      try {
+        const res = await fetch(`data/${name}`, { cache: "no-cache" });
+        return res.ok ? await res.json() : null;
+      } catch {
+        return null;
+      }
+    };
+    if (state.fundflow === undefined) state.fundflow = await grab("fundflow.json");
+    if (state.unlock === undefined) state.unlock = await grab("unlock.json");
+  }
 
   async function loadPrevDay(data) {
     const days = (state.index && state.index.days) || [];
@@ -1085,6 +1100,48 @@
       });
     } else {
       td.append(el("span", { class: "kpi-empty", text: "需要前一交易日数据" }));
+    }
+
+    // 资金流
+    const flowCard = $("#flowCard");
+    const flowBox = $("#flowList");
+    flowBox.textContent = "";
+    if (state.fundflow && ((state.fundflow.sectors || []).length || (state.fundflow.stocks || []).length)) {
+      flowCard.hidden = false;
+      const col = (title, rows, fmt) => {
+        const box = el("div", { class: "flow-col" });
+        box.append(el("h4", { text: title }));
+        rows.slice(0, 6).forEach((r) => {
+          const line = el("div", { class: "flow-row" });
+          line.append(el("span", { class: "flow-name", text: r.name }));
+          line.append(el("b", { class: `flow-num ${r.net >= 0 ? "in" : "out"}`, text: fmt(r.net) }));
+          box.append(line);
+        });
+        if (!rows.length) box.append(el("div", { class: "flow-row", text: "暂无" }));
+        return box;
+      };
+      flowBox.append(col("行业净流入", state.fundflow.sectors || [], (v) => `${v > 0 ? "+" : ""}${v}`));
+      flowBox.append(col("个股净流入", state.fundflow.stocks || [], (v) => `${v > 0 ? "+" : ""}${v}`));
+    } else {
+      flowCard.hidden = true;
+    }
+
+    // 解禁日历
+    const unlockCard = $("#unlockCard");
+    const unlockBox = $("#unlockList");
+    unlockBox.textContent = "";
+    if (state.unlock && (state.unlock.items || []).length) {
+      unlockCard.hidden = false;
+      (state.unlock.items || []).slice(0, 10).forEach((it) => {
+        const row = el("div", { class: "unlock-row" });
+        row.append(el("span", { class: "unlock-date", text: it.date.slice(5) }));
+        row.append(el("span", { class: "unlock-name", text: it.name }));
+        row.append(el("span", { class: "unlock-num", text: `${it.cap} 亿` }));
+        unlockBox.append(row);
+      });
+      unlockBox.append(el("p", { class: "unlock-note", text: "数据源 新浪财经 · 仅列市值前 10" }));
+    } else {
+      unlockCard.hidden = true;
     }
 
     // 月度热力

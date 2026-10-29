@@ -1482,3 +1482,57 @@ body:not(.view-ladder) .tools { display: none; }
 @media (max-width: 700px) {
   .flow { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- 概率页 */
+.ptable { display: flex; flex-direction: column; }
+.pt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) 56px 56px 66px;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: #a6bcd8;
+}
+.pt-row:first-child { border-top: 0; }
+.pt-head { color: #4d6f99; font-size: 10.5px; }
+.pt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-num { text-align: right; color: #cfe2f7; font-weight: 600; }
+
+.watch { margin: 0; padding: 0; list-style: none; }
+.watch li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1.1fr) minmax(0, 1.6fr) 34px 62px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: #a6bcd8;
+  cursor: pointer;
+}
+.watch li:first-child { border-top: 0; }
+.watch li:hover { color: #fff; }
+.w-idx { color: #4d6f99; font-size: 11px; }
+.w-name { color: #e7f0fb; font-weight: 700; }
+.w-meta { color: #5b7391; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-score { text-align: right; color: var(--cyan); font-weight: 700; }
+.w-hist { text-align: right; color: #6d86a6; font-size: 10.5px; }
+
+.bt { display: flex; flex-direction: column; gap: 14px; }
+.bt-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.bt-head b { color: #e7f0fb; font-size: 13px; }
+.bt-total { font-size: 16px; font-weight: 800; }
+.bt-total.up { color: #38d6ff; }
+.bt-total.down { color: #c98a83; }
+.bt-meta { color: #5b7391; font-size: 10.5px; }
+.bt-block .spark { margin-top: 4px; }
+
+.prob-note { margin: 16px 0 0; color: #4d6f99; font-size: 11px; line-height: 1.6; }
+
+@media (max-width: 760px) {
+  .pt-row { grid-template-columns: minmax(0, 1.4fr) 44px 50px 56px; }
+  .watch li { grid-template-columns: 16px minmax(0, 1fr) 34px 54px; }
+  .w-meta { display: none; }
+}

@@ -15,6 +15,7 @@
     lhb: null,
     lhbDate: null,
     compareIndex: false,
+    prob: null,
     fundflow: undefined,
     unlock: undefined,
     installPrompt: null,
@@ -812,7 +813,7 @@
     document.querySelectorAll(".tab").forEach((t) => {
       t.setAttribute("aria-selected", String(t.dataset.view === name));
     });
-    ["ladder", "review", "lhb", "stock"].forEach((v) => {
+    ["ladder", "review", "lhb", "prob", "stock"].forEach((v) => {
       const node = document.getElementById(`view-${v}`);
       if (node) node.hidden = v !== name;
     });
@@ -821,12 +822,13 @@
       Promise.all([loadPrevDay(state.data), loadExtras()]).then(() => renderReview(state.data, state.index));
     }
     if (name === "lhb") loadLhb();
+    if (name === "prob") loadProb();
   }
 
   function switchViewRaw(name) {
     state.view = name;
     document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", "false"));
-    ["ladder", "review", "lhb", "stock"].forEach((v) => {
+    ["ladder", "review", "lhb", "prob", "stock"].forEach((v) => {
       const node = document.getElementById(`view-${v}`);
       if (node) node.hidden = v !== name;
     });
@@ -1154,6 +1156,94 @@
       const cell = el("span", { class: `d l${level}`, title: `${d.date} 涨停 ${d.sealed} 家` });
       if (d.date === (state.data && state.data.date)) cell.classList.add("on");
       cal.append(cell);
+    });
+  }
+
+  /* ------------------------------------------------------------ 概率统计 */
+  async function loadProb() {
+    if (state.prob) {
+      renderProb(state.prob);
+      return;
+    }
+    $("#probSummary").textContent = "加载中…";
+    try {
+      const res = await fetch("data/prob.json", { cache: "no-cache" });
+      if (!res.ok) throw new Error("no data");
+      state.prob = await res.json();
+      renderProb(state.prob);
+    } catch {
+      $("#probSummary").textContent = "概率数据尚未生成。";
+    }
+  }
+
+  function renderProb(prob) {
+    const s = prob.samples || {};
+    $("#probSummary").textContent =
+      `样本 ${prob.range.from} ~ ${prob.range.to}，共 ${s.days} 个交易日 / ${s.events} 次涨停，其中 ${s.withNext} 次有次日数据。`;
+
+    const table = (box, head, rows, cells) => {
+      box.textContent = "";
+      const h = el("div", { class: "pt-row pt-head" });
+      head.forEach((t) => h.append(el("span", { text: t })));
+      box.append(h);
+      rows.forEach((r) => {
+        const line = el("div", { class: "pt-row" });
+        cells(r).forEach((c, i) => {
+          const tag = el("span", { class: i === 0 ? "pt-name" : "pt-num", text: String(c) });
+          line.append(tag);
+        });
+        box.append(line);
+      });
+      if (!rows.length) box.append(el("div", { class: "pt-row", text: "样本不足" }));
+    };
+
+    table($("#firstBoardTable"), ["类型", "样本", "胜率", "平均涨幅"],
+      prob.firstBoard || [],
+      (r) => [`${r.bucket}${r.oneWord ? " · 一字" : ""}`, r.n, `${r.win}%`, `${r.avg > 0 ? "+" : ""}${r.avg}%`]);
+
+    table($("#promotionTable"), ["昨日板数", "样本", "晋级", "概率"],
+      prob.promotion || [],
+      (r) => [`${r.base}板 → ${r.base + 1}板`, r.n, r.next, `${r.rate}%`]);
+
+    table($("#sectorTable2"), ["板块", "样本", "次日仍在榜", "概率"],
+      (prob.sectorCont || []).slice(0, 8),
+      (r) => [r.name, r.n, r.hit, `${r.rate}%`]);
+
+    table($("#emotionTable"), ["情绪区间", "样本", "次日平均", "胜率"],
+      prob.emotionTier || [],
+      (r) => [r.label, r.n, `${r.avg > 0 ? "+" : ""}${r.avg}%`, `${r.win}%`]);
+
+    const watch = $("#watchList");
+    watch.textContent = "";
+    (prob.watchlist || []).forEach((w) => {
+      const li = el("li");
+      li.append(el("span", { class: "w-idx", text: String(watch.children.length + 1) }));
+      li.append(el("span", { class: "w-name", text: w.name }));
+      li.append(el("span", { class: "w-meta", text: `${w.height === 1 ? "首板" : w.height + "板"} · ${w.sector || ""} · ${w.reasons.join("/")}` }));
+      li.append(el("span", { class: "w-score", text: String(w.score) }));
+      li.append(el("span", { class: "w-hist", text: w.histWin != null ? `${w.histKind || "胜率"} ${w.histWin}%` : "" }));
+      li.addEventListener("click", () => openStockPage(w.code));
+      watch.append(li);
+    });
+    if (!(prob.watchlist || []).length) watch.append(el("li", { text: "今日无候选" }));
+
+    const bt = $("#backtestBox");
+    bt.textContent = "";
+    (prob.backtest || []).forEach((b) => {
+      const block = el("div", { class: "bt-block" });
+      const head = el("div", { class: "bt-head" });
+      head.append(el("b", { text: b.name }));
+      head.append(el("span", { class: `bt-total ${b.total >= 0 ? "up" : "down"}`, text: `${b.total > 0 ? "+" : ""}${b.total}%` }));
+      head.append(el("span", { class: "bt-meta", text: `胜率 ${b.win}% · 回撤 ${b.maxDD}% · ${b.days} 天` }));
+      block.append(head);
+
+      let eq = 1;
+      const points = (b.curve || []).map((c) => {
+        eq *= 1 + c.ret / 100;
+        return { date: c.date, v: (eq - 1) * 100 };
+      });
+      if (points.length >= 2) block.append(sparkSvg(points.map((p) => ({ date: p.date, v: p.v })), b.name));
+      bt.append(block);
     });
   }
 

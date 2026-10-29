@@ -61,6 +61,7 @@
     <button class="tab" type="button" data-view="ladder" aria-selected="true">连板天梯</button>
     <button class="tab" type="button" data-view="review" aria-selected="false">复盘看板</button>
     <button class="tab" type="button" data-view="lhb" aria-selected="false">龙虎榜</button>
+    <button class="tab" type="button" data-view="prob" aria-selected="false">概率</button>
   </nav>
 
   <section id="view-ladder">
@@ -217,6 +218,37 @@
       <summary>查看全部上榜个股与席位</summary>
       <div class="lhb-list" id="lhbList"></div>
     </details>
+  </section>
+
+  <section id="view-prob" hidden>
+    <p class="lhb-summary" id="probSummary"></p>
+    <div class="panel-grid">
+      <div class="pcard">
+        <h3>首板分层<em>次日上涨频率（收盘买、次日收盘卖）</em></h3>
+        <div class="ptable" id="firstBoardTable"></div>
+      </div>
+      <div class="pcard">
+        <h3>连板晋级<em>历史晋级到下一板的概率</em></h3>
+        <div class="ptable" id="promotionTable"></div>
+      </div>
+      <div class="pcard">
+        <h3>板块延续<em>今日成团的板块，次日还在榜的概率</em></h3>
+        <div class="ptable" id="sectorTable2"></div>
+      </div>
+      <div class="pcard">
+        <h3>明日观察池<em>多信号打分，附历史同类胜率</em></h3>
+        <ol class="watch" id="watchList"></ol>
+      </div>
+      <div class="pcard">
+        <h3>情绪分档<em>当前情绪对应历史上的次日表现</em></h3>
+        <div class="ptable" id="emotionTable"></div>
+      </div>
+      <div class="pcard">
+        <h3>策略回测<em>等权买入、次日收盘卖出；一字板实际难以买入，仅作统计参考</em></h3>
+        <div class="bt" id="backtestBox"></div>
+      </div>
+    </div>
+    <p class="prob-note">统计口径：同花顺 + 东方财富历史涨停池，58 个交易日；「胜率」= 次日收盘价高于当日收盘价的样本占比。历史频率不代表未来，不构成投资建议。</p>
   </section>
 
   <section id="view-stock" hidden>

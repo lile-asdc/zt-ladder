@@ -89,8 +89,10 @@ def cmd_daily() -> None:
             dragon.build_and_save(today, pl.DATA_DIR)
             lhb_chart.build(today, pl.DATA_DIR)
             lhb_chart.build_history(pl.DATA_DIR)
-            unlock.build(pl.DATA_DIR)
-            fundflow.build(pl.DATA_DIR)
+            unlock_path = unlock.build(pl.DATA_DIR)
+            print(f"[{'ok' if unlock_path else 'warn'}] 解禁日历")
+            flow_path = fundflow.build(pl.DATA_DIR)
+            print(f"[{'ok' if flow_path else 'warn'}] 资金流（接口不可达时为空）")
         except Exception as exc:  # noqa: BLE001 - 龙虎榜失败不影响主流程
             print(f"[warn] 龙虎榜抓取失败：{exc}")
     pl.rebuild_index()

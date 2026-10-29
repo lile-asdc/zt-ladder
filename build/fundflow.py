@@ -1,71 +1,87 @@
-"""资金流：行业主力净流入 + 个股主力净流入。
+"""资金流：行业主力净额 + 个股主力净额（同花顺 HTML 页面，解析稳定）。
 
-东财 push2 的列表接口在部分网络会被直接断连，所以这里做了「抓不到就返回 None」，
-前端只在数据存在时渲染对应卡片。CI（境外网络）里通常能通。
+东财 push2 的列表接口在当前网络与 GitHub Actions 上都被断连，故改用同花顺。
 """
 
 from __future__ import annotations
 
 import json
+import re
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 import em
 
-CLIST = "http://push2.eastmoney.com/api/qt/clist/get"
+SECTOR_URL = "http://data.10jqka.com.cn/funds/hyzjl/"
+STOCK_URL = "http://data.10jqka.com.cn/funds/ggzjl/"
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+)
 
 
-def _list(fs: str, fields: str, fid: str, size: int) -> list[dict]:
-    url = (
-        f"{CLIST}?pn=1&pz={size}&po=1&np=1&fltt=2&invt=2&fid={fid}&fs={fs}&fields={fields}"
+def _get(url: str) -> str:
+    req = urllib.request.Request(
+        url, headers={"User-Agent": UA, "Referer": "http://data.10jqka.com.cn/"}
     )
-    payload = em._get_json(url, "http://quote.eastmoney.com/", retries=2)
-    data = payload.get("data") or {}
-    return data.get("diff") or []
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        return resp.read().decode("gbk", "replace")
 
 
-def fetch_sectors() -> list[dict] | None:
-    """行业板块主力净流入（按净额降序）。"""
+def _rows(html: str) -> list[list[str]]:
+    out = []
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = [re.sub(r"<[^>]+>", "", c).strip() for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S)]
+        if cells and re.fullmatch(r"\d{1,3}", cells[0]):
+            out.append(cells)
+    return out
+
+
+def _num(text: str) -> float:
+    """'2.19亿' -> 2.19 ; '1234万' -> 0.1234 ; '41.26' -> 41.26"""
+    text = (text or "").strip()
     try:
-        rows = _list("m:90+t:2", "f12,f14,f62,f184", "f62", 40)
-    except (em.SourceError, ValueError):
+        if text.endswith("亿"):
+            return round(float(text[:-1]), 2)
+        if text.endswith("万"):
+            return round(float(text[:-1]) / 10000, 4)
+        return round(float(text), 2)
+    except ValueError:
+        return 0.0
+
+
+def fetch_sectors(limit: int = 12) -> list[dict] | None:
+    try:
+        html = _get(SECTOR_URL)
+    except Exception:  # noqa: BLE001
         return None
     out = []
-    for row in rows:
-        try:
-            net = float(row.get("f62") or 0) / 1e8
-        except (TypeError, ValueError):
+    for cells in _rows(html):
+        if len(cells) < 7:
             continue
-        out.append({"name": row.get("f14"), "net": round(net, 2)})
-    return out or None
+        out.append({"name": cells[1], "pct": cells[3], "net": _num(cells[6]), "count": cells[7] if len(cells) > 7 else None})
+    if not out:
+        return None
+    out.sort(key=lambda x: -x["net"])
+    return out[:limit]
 
 
-def fetch_stocks() -> list[dict] | None:
-    """个股主力净流入（沪深，按净额降序取前 20）。"""
+def fetch_stocks(limit: int = 20) -> list[dict] | None:
     try:
-        rows = _list(
-            "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23",
-            "f12,f14,f3,f62,f184",
-            "f62",
-            20,
-        )
-    except (em.SourceError, ValueError):
+        html = _get(STOCK_URL)
+    except Exception:  # noqa: BLE001
         return None
     out = []
-    for row in rows:
-        try:
-            net = float(row.get("f62") or 0) / 1e8
-        except (TypeError, ValueError):
+    for cells in _rows(html):
+        if len(cells) < 8:
             continue
-        out.append(
-            {
-                "code": row.get("f12"),
-                "name": row.get("f14"),
-                "pct": row.get("f3"),
-                "net": round(net, 2),
-            }
-        )
-    return out or None
+        net = round(_num(cells[6]) - _num(cells[7]), 2)
+        out.append({"code": cells[1], "name": cells[2], "pct": cells[4], "net": net})
+    if not out:
+        return None
+    out.sort(key=lambda x: -x["net"])
+    return out[:limit]
 
 
 def build(data_dir: Path) -> Path | None:
@@ -75,6 +91,7 @@ def build(data_dir: Path) -> Path | None:
         return None
     payload = {
         "updatedAt": datetime.now(em.CST).isoformat(timespec="seconds"),
+        "source": "10jqka",
         "sectors": sectors or [],
         "stocks": stocks or [],
     }

@@ -105,12 +105,23 @@ def build() -> dict:
     # ---- 晋级概率 ----
     promo: dict[int, dict] = defaultdict(lambda: {"n": 0, "next": 0})
     with_next = 0
+    day_feat: dict[str, dict] = {
+        d: {
+            "count": len(days[d]),
+            "maxH": max((e["height"] for e in days[d]), default=0),
+            "multi": (sum(1 for e in days[d] if e["height"] >= 2) / len(days[d])) if days[d] else 0,
+            "nextEffect": None,
+        }
+        for d in dates
+    }
 
     for date in dates:
         nd = next_day(dates, date)
         if not nd:
             continue
         next_codes = {e["code"]: e["height"] for e in days[nd]}
+        today_first_rets: list[float] = []
+        heights = [e["height"] for e in days[date]]
         for ev in days[date]:
             code = ev["code"]
             h = ev["height"]
@@ -126,12 +137,16 @@ def build() -> dict:
                 continue
             pct = (bar[4] / base - 1) * 100
             with_next += 1
+            today_first_rets.append(pct)
             key = (_bucket(ev["time"]), bool(ev["oneWord"]))
             slot = buckets[key]
             slot["n"] += 1
             slot["sum"] += pct
             if pct > 0:
                 slot["win"] += 1
+
+        if today_first_rets:
+            day_feat[date]["nextEffect"] = round(sum(today_first_rets) / len(today_first_rets), 2)
 
     first_board = []
     for (bucket, oneword), slot in sorted(buckets.items(), key=lambda kv: (kv[0][0] or "", kv[0][1])):
@@ -150,7 +165,7 @@ def build() -> dict:
     promotion = [
         {"base": h, "n": v["n"], "next": v["next"], "rate": round(v["next"] / v["n"] * 100, 1)}
         for h, v in sorted(promo.items())
-        if v["n"] >= 3
+        if v["n"] >= 3 and h <= 8
     ]
 
     # ---- 简单回测：按日等权持有首板股，次日收盘卖出 ----
@@ -244,27 +259,55 @@ def build() -> dict:
         if v["n"] >= 5
     ]
 
-    # ---- 情绪分位 ----
-    em_payloads = [json.loads((DATA / f"{d}.json").read_text(encoding="utf-8")) for d in em_days]
-    scores = [p.get("emotion", {}).get("score") for p in em_payloads if p.get("emotion")]
+    # ---- 情绪分位（用全量 198 天，而非只有东财的 17 天）----
+    def pct_rank(values: dict[str, float], v: float) -> float:
+        vals = sorted(values.values())
+        if not vals:
+            return 0.0
+        lo = sum(1 for x in vals if x < v)
+        return lo / len(vals)
+
+    counts = {d: f["count"] for d, f in day_feat.items()}
+    maxhs = {d: f["maxH"] for d, f in day_feat.items()}
+    multis = {d: f["multi"] for d, f in day_feat.items()}
+
+    scored = []
+    for d, f in day_feat.items():
+        if f["nextEffect"] is None:
+            continue
+        score = 100 * (
+            0.45 * pct_rank(counts, f["count"])
+            + 0.25 * pct_rank(maxhs, f["maxH"])
+            + 0.30 * pct_rank(multis, f["multi"])
+        )
+        scored.append((score, f["nextEffect"], d))
+
     tiers = []
-    if scores:
-        for lo, hi, label in ((0, 40, "0-40 冰点"), (40, 55, "40-55 低迷"), (55, 70, "55-70 修复"), (70, 101, "70+ 亢奋")):
-            rows = [
-                (em_payloads[i].get("emotion", {}).get("score"), em_payloads[i + 1].get("effect", {}).get("avg"))
-                for i in range(len(em_payloads) - 1)
-                if em_payloads[i].get("emotion") and em_payloads[i + 1].get("effect")
-            ]
-            sel = [r[1] for r in rows if lo <= r[0] < hi]
-            if sel:
-                tiers.append(
-                    {
-                        "label": label,
-                        "n": len(sel),
-                        "avg": round(sum(sel) / len(sel), 2),
-                        "win": round(sum(1 for x in sel if x > 0) / len(sel) * 100, 1),
-                    }
-                )
+    for lo, hi, label in ((0, 25, "0-25 冰点"), (25, 50, "25-50 低迷"), (50, 75, "50-75 修复"), (75, 101, "75-100 亢奋")):
+        sel = [x[1] for x in scored if lo <= x[0] < hi]
+        if sel:
+            tiers.append(
+                {
+                    "label": label,
+                    "n": len(sel),
+                    "avg": round(sum(sel) / len(sel), 2),
+                    "win": round(sum(1 for x in sel if x > 0) / len(sel) * 100, 1),
+                }
+            )
+    today_score = None
+    if dates:
+        last = dates[-1]
+        f = day_feat.get(last)
+        if f:
+            today_score = round(
+                100
+                * (
+                    0.45 * pct_rank(counts, f["count"])
+                    + 0.25 * pct_rank(maxhs, f["maxH"])
+                    + 0.30 * pct_rank(multis, f["multi"])
+                ),
+                1,
+            )
 
     # ---- 今日观察池 ----
     watchlist = []
@@ -341,6 +384,7 @@ def build() -> dict:
         "promotion": promotion,
         "sectorCont": sector_cont,
         "emotionTier": tiers,
+        "emotionToday": today_score,
         "watchlist": watchlist,
         "backtest": backtest,
         "range": {"from": dates[0], "to": dates[-1]},

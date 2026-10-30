@@ -1257,6 +1257,11 @@
     table($("#emotionTable"), ["情绪区间", "样本", "次日平均", "胜率"],
       prob.emotionTier || [],
       (r) => [r.label, r.n, `${r.avg > 0 ? "+" : ""}${r.avg}%`, `${r.win}%`]);
+    if (prob.emotionToday != null) {
+      $("#emotionTable").append(
+        el("p", { class: "prob-note", text: `今日情绪分 ${prob.emotionToday}（按全量历史分位计算）` })
+      );
+    }
 
     const watch = $("#watchList");
     watch.textContent = "";

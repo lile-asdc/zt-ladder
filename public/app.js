@@ -17,6 +17,7 @@
     compareIndex: false,
     prob: null,
     patterns: null,
+    signals: null,
     fundflow: undefined,
     unlock: undefined,
     installPrompt: null,
@@ -814,7 +815,7 @@
     document.querySelectorAll(".tab").forEach((t) => {
       t.setAttribute("aria-selected", String(t.dataset.view === name));
     });
-    ["ladder", "review", "lhb", "prob", "stock"].forEach((v) => {
+    ["ladder", "review", "lhb", "prob", "signal", "stock"].forEach((v) => {
       const node = document.getElementById(`view-${v}`);
       if (node) node.hidden = v !== name;
     });
@@ -824,12 +825,13 @@
     }
     if (name === "lhb") loadLhb();
     if (name === "prob") loadProb();
+    if (name === "signal") loadSignals();
   }
 
   function switchViewRaw(name) {
     state.view = name;
     document.querySelectorAll(".tab").forEach((t) => t.setAttribute("aria-selected", "false"));
-    ["ladder", "review", "lhb", "prob", "stock"].forEach((v) => {
+    ["ladder", "review", "lhb", "prob", "signal", "stock"].forEach((v) => {
       const node = document.getElementById(`view-${v}`);
       if (node) node.hidden = v !== name;
     });
@@ -1288,6 +1290,153 @@
       if (points.length >= 2) block.append(sparkSvg(points.map((p) => ({ date: p.date, v: p.v })), b.name));
       bt.append(block);
     });
+  }
+
+  /* ------------------------------------------------------------ 策略信号 */
+  async function loadSignals() {
+    if (state.signals) {
+      renderSignals(state.signals);
+      return;
+    }
+    $("#sigSummary").textContent = "加载中…";
+    try {
+      const res = await fetch("data/signals.json", { cache: "no-cache" });
+      if (!res.ok) throw new Error("no data");
+      state.signals = await res.json();
+      renderSignals(state.signals);
+    } catch {
+      $("#sigSummary").textContent = "策略数据尚未生成。";
+    }
+  }
+
+  function renderSignals(sig) {
+    $("#sigSummary").textContent = `统计截至 ${sig.updatedAt.slice(0, 10)}，样本来自全部历史涨停与次日行情。`;
+
+    const kpi = (box, items) => {
+      box.textContent = "";
+      items.forEach(([v, label, cls]) => {
+        const d = el("div", { class: "kpi-item" });
+        d.append(el("b", { class: cls || "", text: String(v) }), el("em", { text: label }));
+        box.append(d);
+      });
+    };
+
+    // 卖点
+    const sell = sig.sell || {};
+    if (sell.n) {
+      kpi($("#sellKpi"), [
+        [`+${sell.highMed}%`, "次日最高（中位）"],
+        [`${sell.closeMed}%`, "次日收盘（中位）"],
+        [`${sell.giveMed}%`, "平均回吐"],
+        [String(sell.n), "样本"],
+      ]);
+      const dist = $("#sellDist");
+      dist.textContent = "";
+      (sell.dist || []).forEach((d) => {
+        const row = el("div", { class: "dist-row" });
+        row.append(el("span", { class: "dist-label", text: d.label }));
+        const bar = el("span", { class: "dist-bar" });
+        const fill = el("i");
+        fill.style.width = `${d.pct}%`;
+        bar.append(fill);
+        row.append(bar, el("span", { class: "dist-num", text: `${d.pct}%` }));
+        dist.append(row);
+      });
+    }
+
+    // 竞价
+    const at = $("#auctionTable");
+    at.textContent = "";
+    const ah = el("div", { class: "pt-row pt-head" });
+    ["次日开盘", "样本", "当日胜率", "平均"].forEach((t) => ah.append(el("span", { text: t })));
+    at.append(ah);
+    (sig.auction || []).forEach((r) => {
+      const line = el("div", { class: "pt-row" });
+      line.append(el("span", { class: "pt-name", text: r.label }));
+      line.append(el("span", { class: "pt-num", text: String(r.n) }));
+      line.append(el("span", { class: `pt-num ${r.win >= 50 ? "up" : "down"}`, text: `${r.win}%` }));
+      line.append(el("span", { class: "pt-num", text: `${r.avg > 0 ? "+" : ""}${r.avg}%` }));
+      at.append(line);
+    });
+
+    // 尾盘
+    const lb = sig.lateBoards || {};
+    const ls = sig.lateStats || {};
+    kpi($("#lateKpi"), [
+      [ls.win != null ? `${ls.win}%` : "—", "历史胜率"],
+      [ls.avg != null ? `${ls.avg > 0 ? "+" : ""}${ls.avg}%` : "—", "平均次日"],
+      [String(ls.n || 0), "样本"],
+      [String(lb.n || 0), "今日尾盘封板"],
+    ]);
+    const ll = $("#lateList");
+    ll.textContent = "";
+    (lb.items || []).forEach((it) => {
+      const li = el("li");
+      li.append(el("b", { text: it.name }), el("span", { text: `${it.height === 1 ? "首板" : it.height + "板"} · ${it.time} · ${it.sector || ""}` }));
+      li.addEventListener("click", () => openStockPage(it.code));
+      ll.append(li);
+    });
+    if (!(lb.items || []).length) ll.append(el("li", { text: "今日没有 14:30 后首封的个股" }));
+
+    // 高标
+    const hb = sig.highBoard || {};
+    kpi($("#highKpi"), [
+      [hb.dropMed != null ? `${hb.dropMed}%` : "—", "断板后 5 日（中位）"],
+      [hb.dropWin != null ? `${hb.dropWin}%` : "—", "5 日后仍上涨"],
+      [hb.gapRate != null ? `${hb.gapRate}%` : "—", "5 板+次日炸板率"],
+      [String(hb.dropN || 0), "样本"],
+    ]);
+    $("#highNote").textContent = hb.threshold
+      ? `${hb.threshold} 板以上断板样本 ${hb.dropN} 个；炸板率基于次日最高价是否触及涨停后回落。`
+      : "";
+
+    // 题材龙头
+    const tl = $("#themeList");
+    tl.textContent = "";
+    (sig.themes || []).forEach((t) => {
+      const li = el("li");
+      li.append(el("b", { text: t.leader.name }), el("span", { text: `${t.theme} · ${t.count}家 · ${t.leader.height}板` }));
+      li.append(el("i", { class: "lead-tag", text: "龙头" }));
+      li.addEventListener("click", () => openStockPage(t.leader.code));
+      tl.append(li);
+    });
+    if (!(sig.themes || []).length) tl.append(el("li", { text: "今日没有成团题材" }));
+
+    // 相似日
+    const sim = sig.similar || {};
+    const sb = $("#similarBox");
+    sb.textContent = "";
+    if (sim.items && sim.items.length) {
+      const head = el("div", { class: "sim-head" });
+      head.append(el("b", { text: `${sim.avgNext > 0 ? "+" : ""}${sim.avgNext}%` }));
+      head.append(el("span", { text: "历史上最像的 3 天，其次日赚钱效应均值" }));
+      sb.append(head);
+      sim.items.forEach((it) => {
+        const row = el("div", { class: "sim-row" });
+        row.append(el("span", { text: it.date }));
+        row.append(el("span", { class: "sim-dist", text: `距离 ${it.dist}` }));
+        row.append(el("span", { class: `sim-next ${it.next >= 0 ? "up" : "down"}`, text: `${it.next > 0 ? "+" : ""}${it.next}%` }));
+        sb.append(row);
+      });
+    } else {
+      sb.append(el("span", { text: "样本不足" }));
+    }
+
+    // 资金连续
+    const fs = sig.fundStreak || {};
+    const fl = $("#fundList");
+    fl.textContent = "";
+    if (!fs.ready) {
+      fl.append(el("li", { text: `需要连续 3 天资金流快照，目前 ${fs.have || 0} 天，明天收盘后可用` }));
+    } else if (!(fs.items || []).length) {
+      fl.append(el("li", { text: "近 3 日没有连续净流入的个股" }));
+    } else {
+      fs.items.forEach((it) => {
+        const li = el("li");
+        li.append(el("b", { text: it.name }), el("span", { class: "fund-sum", text: `3 日 ${it.sum > 0 ? "+" : ""}${it.sum} 亿` }));
+        fl.append(li);
+      });
+    }
   }
 
   /* ------------------------------------------------------------ 龙虎榜复盘 */

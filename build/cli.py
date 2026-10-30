@@ -20,6 +20,7 @@ import fundflow
 import lhb_chart
 import patterns
 import problib
+import signals
 import unlock
 import payload as pl
 
@@ -96,6 +97,7 @@ def cmd_daily() -> None:
             flow_path = fundflow.build(pl.DATA_DIR)
             problib.save(problib.build())
             patterns.save(patterns.build(), pl.DATA_DIR)
+            signals.save(signals.build())
             print(f"[{'ok' if flow_path else 'warn'}] 资金流（接口不可达时为空）")
         except Exception as exc:  # noqa: BLE001 - 龙虎榜失败不影响主流程
             print(f"[warn] 龙虎榜抓取失败：{exc}")

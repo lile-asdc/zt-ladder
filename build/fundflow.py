@@ -97,4 +97,17 @@ def build(data_dir: Path) -> Path | None:
     }
     out = data_dir / "fundflow.json"
     out.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+    # 追加当日快照，供「连续 N 日净流入」使用
+    hist_path = data_dir / "fundflow-history.json"
+    hist = {}
+    if hist_path.exists():
+        try:
+            hist = json.loads(hist_path.read_text(encoding="utf-8"))
+        except ValueError:
+            hist = {}
+    day_key = datetime.now(em.CST).strftime("%Y-%m-%d")
+    hist[day_key] = {"sectors": payload.get("sectors", []), "stocks": payload.get("stocks", [])}
+    hist = dict(sorted(hist.items())[-30:])
+    hist_path.write_text(json.dumps(hist, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return out

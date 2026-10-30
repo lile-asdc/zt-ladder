@@ -62,6 +62,7 @@
     <button class="tab" type="button" data-view="review" aria-selected="false">复盘看板</button>
     <button class="tab" type="button" data-view="lhb" aria-selected="false">龙虎榜</button>
     <button class="tab" type="button" data-view="prob" aria-selected="false">概率</button>
+    <button class="tab" type="button" data-view="signal" aria-selected="false">策略</button>
   </nav>
 
   <section id="view-ladder">
@@ -254,6 +255,50 @@
       </div>
     </div>
     <p class="prob-note">统计口径：同花顺 + 东方财富历史涨停池，58 个交易日；「胜率」= 次日收盘价高于当日收盘价的样本占比。历史频率不代表未来，不构成投资建议。</p>
+  </section>
+
+  <section id="view-signal" hidden>
+    <p class="lhb-summary" id="sigSummary"></p>
+    <div class="panel-grid">
+      <div class="pcard">
+        <h3>卖点：冲高回落<em>首板次日高点 vs 收盘</em></h3>
+        <div class="kpi" id="sellKpi"></div>
+        <div class="dist" id="sellDist"></div>
+      </div>
+
+      <div class="pcard">
+        <h3>竞价强度<em>次日开盘涨幅 → 当日胜率</em></h3>
+        <div class="ptable" id="auctionTable"></div>
+      </div>
+
+      <div class="pcard">
+        <h3>尾盘封板<em>14:30 后首封</em></h3>
+        <div class="kpi" id="lateKpi"></div>
+        <ul class="mini-list" id="lateList"></ul>
+      </div>
+
+      <div class="pcard">
+        <h3>高标风险<em>4 板以上断板之后</em></h3>
+        <div class="kpi" id="highKpi"></div>
+        <p class="prob-note" id="highNote"></p>
+      </div>
+
+      <div class="pcard">
+        <h3>题材龙头<em>同题材里最强的那只</em></h3>
+        <ul class="mini-list" id="themeList"></ul>
+      </div>
+
+      <div class="pcard">
+        <h3>相似日<em>今天像历史上哪几天</em></h3>
+        <div class="sim" id="similarBox"></div>
+      </div>
+
+      <div class="pcard">
+        <h3>资金连续流入<em>连续 3 日主力净流入</em></h3>
+        <ul class="mini-list" id="fundList"></ul>
+      </div>
+    </div>
+    <p class="prob-note">口径：58 个交易日涨停池 + 全市场日 K；胜率 = 次日收盘高于当日收盘的样本占比。历史统计不代表未来，不构成投资建议。</p>
   </section>
 
   <section id="view-stock" hidden>

@@ -1544,3 +1544,36 @@ body:not(.view-ladder) .tools { display: none; }
   .pt-row6 { grid-template-columns: minmax(0, 1fr) 52px 56px 60px; }
   .pt-row6 span:nth-child(5), .pt-row6 span:nth-child(6) { display: none; }
 }
+
+/* ---------------------------------------------------------------- 策略页 */
+.dist { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.dist-row { display: grid; grid-template-columns: 62px 1fr 46px; gap: 8px; align-items: center; font-size: 12px; color: #8ba5c3; }
+.dist-bar { height: 10px; border-radius: 4px; background: #122a44; overflow: hidden; }
+.dist-bar i { display: block; height: 100%; background: linear-gradient(90deg, #2f81f7, #38d6ff); }
+.dist-num { text-align: right; color: #cfe2f7; }
+
+.mini-list { margin: 10px 0 0; padding: 0; list-style: none; }
+.mini-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: #8ba5c3;
+  cursor: pointer;
+}
+.mini-list li:first-child { border-top: 0; }
+.mini-list li b { color: #e7f0fb; font-weight: 700; }
+.mini-list li span { color: #5b7391; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-tag { margin-left: auto; font-style: normal; font-size: 10px; padding: 1px 6px; border-radius: 4px; background: rgba(255, 209, 102, 0.16); color: #ffd166; }
+.fund-sum { margin-left: auto; color: #38d6ff !important; font-weight: 600; }
+
+.sim-head { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.sim-head b { font-size: 24px; color: var(--cyan); font-weight: 800; }
+.sim-head span { font-size: 10.5px; color: #5b7391; }
+.sim-row { display: grid; grid-template-columns: 1fr 80px 62px; gap: 8px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12px; color: #a6bcd8; }
+.sim-dist { color: #5b7391; font-size: 11px; }
+.sim-next { text-align: right; font-weight: 700; }
+.sim-next.up { color: #38d6ff; }
+.sim-next.down { color: #c98a83; }

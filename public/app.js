@@ -1258,9 +1258,9 @@
       prob.emotionTier || [],
       (r) => [r.label, r.n, `${r.avg > 0 ? "+" : ""}${r.avg}%`, `${r.win}%`]);
     if (prob.emotionToday != null) {
-      $("#emotionTable").append(
-        el("p", { class: "prob-note", text: `今日情绪分 ${prob.emotionToday}（按全量历史分位计算）` })
-      );
+      const card = $("#emotionTable").closest(".pcard");
+      const sub = card && card.querySelector("h3 em");
+      if (sub) sub.textContent = `今日情绪分 ${prob.emotionToday} · 历史同区间次日表现`;
     }
 
     const watch = $("#watchList");

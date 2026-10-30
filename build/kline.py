@@ -25,7 +25,7 @@ def _symbol(code: str) -> str:
     return "sz" + code
 
 
-def _fetch_tencent(code: str, count: int = 90) -> list[list]:
+def _fetch_tencent(code: str, count: int = 260) -> list[list]:
     symbol = _symbol(code)
     url = f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,{count},qfq"
     try:
@@ -52,7 +52,7 @@ def _fetch_tencent(code: str, count: int = 90) -> list[list]:
     return out
 
 
-def _fetch_sina(code: str, count: int = 90) -> list[list]:
+def _fetch_sina(code: str, count: int = 260) -> list[list]:
     symbol = _symbol(code)
     url = (
         "http://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData"
@@ -91,11 +91,11 @@ def load(code: str, data_dir: Path) -> list[list]:
     return []
 
 
-def ensure(codes: list[str], data_dir: Path, workers: int = 8) -> int:
-    """补齐缺失的日 K 缓存，返回新抓取数量。"""
+def ensure(codes: list[str], data_dir: Path, workers: int = 8, force: bool = False) -> int:
+    """补齐缺失的日 K 缓存（force=True 时全部重抓），返回抓取数量。"""
     out_dir = ROOT / CACHE_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    todo = [c for c in dict.fromkeys(codes) if c and not (out_dir / f"{c}.json").exists()]
+    todo = [c for c in dict.fromkeys(codes) if c and (force or not (out_dir / f"{c}.json").exists())]
 
     def one(code: str):
         rows = _fetch_tencent(code)

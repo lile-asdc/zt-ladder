@@ -134,6 +134,7 @@ def build(max_files: int | None = None) -> dict:
     if max_files:
         files = files[:max_files]
     used = 0
+    dates_seen: set[str] = set()
     for path in files:
         try:
             bars = json.loads(path.read_text(encoding="utf-8"))
@@ -142,6 +143,7 @@ def build(max_files: int | None = None) -> dict:
         if len(bars) < 30:
             continue
         used += 1
+        dates_seen.update(b[0] for b in bars)
         for (name, _date), res in evaluate(bars, idx).items():
             slot = agg[name]
             slot["n"] += 1
@@ -182,6 +184,8 @@ def build(max_files: int | None = None) -> dict:
     return {
         "updatedAt": datetime.now(em.CST).isoformat(timespec="seconds"),
         "stocks": used,
+        "from": min(dates_seen) if dates_seen else None,
+        "to": max(dates_seen) if dates_seen else None,
         "rows": rows,
     }
 

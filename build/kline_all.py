@@ -45,6 +45,9 @@ def all_codes() -> list[str]:
     return list(dict.fromkeys(codes))
 
 
+FORCE = "--force" in sys.argv
+
+
 def main() -> None:
     t0 = time.time()
     codes = all_codes()
@@ -55,7 +58,7 @@ def main() -> None:
     batch = 400
     for i in range(0, len(codes), batch):
         chunk = codes[i : i + batch]
-        added = kline.ensure(chunk, DATA, workers=8)
+        added = kline.ensure(chunk, DATA, workers=8, force=FORCE)
         total = len(list((ROOT / ".cache" / "kline").glob("*.json")))
         print(f"  {i + len(chunk)}/{len(codes)}  新增 {added}  累计 {total}  ({time.time() - t0:.0f}s)", flush=True)
     print("done")

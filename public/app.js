@@ -1216,7 +1216,7 @@
       box.append(
         el("p", {
           class: "prob-note",
-          text: `全市场 ${payload.stocks} 只个股、约 90 个交易日；超额 = 个股涨跌 − 当日上证涨跌`,
+          text: `全市场 ${payload.stocks} 只个股、${payload.from || ""} ~ ${payload.to || ""} 的日 K；超额 = 个股涨跌 − 当日上证涨跌`,
         })
       );
   }
@@ -1279,13 +1279,13 @@
       const head = el("div", { class: "bt-head" });
       head.append(el("b", { text: b.name }));
       head.append(el("span", { class: `bt-total ${b.total >= 0 ? "up" : "down"}`, text: `${b.total > 0 ? "+" : ""}${b.total}%` }));
-      head.append(el("span", { class: "bt-meta", text: `胜率 ${b.win}% · 回撤 ${b.maxDD}% · ${b.days} 天` }));
+      head.append(el("span", { class: "bt-meta", text: `胜率 ${b.win}% · 最大回撤 ${b.maxDD}% · ${b.days} 天 · 日均 ${b.avgDay}%` }));
       block.append(head);
 
-      let eq = 1;
+      let eq = 0;
       const points = (b.curve || []).map((c) => {
-        eq *= 1 + c.ret / 100;
-        return { date: c.date, v: (eq - 1) * 100 };
+        eq += c.ret;
+        return { date: c.date, v: eq };
       });
       if (points.length >= 2) block.append(sparkSvg(points.map((p) => ({ date: p.date, v: p.v })), b.name));
       bt.append(block);

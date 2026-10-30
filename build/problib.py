@@ -179,42 +179,69 @@ def build() -> dict:
                 curve.append({"date": date, "ret": round(sum(rets) / len(rets), 2), "n": len(rets)})
         if not curve:
             continue
-        equity = 1.0
-        peak = 1.0
+        equity = 0.0
+        peak = 0.0
         max_dd = 0.0
         for point in curve:
-            equity *= 1 + point["ret"] / 100
+            equity += point["ret"]
             peak = max(peak, equity)
-            max_dd = max(max_dd, (peak - equity) / peak * 100)
+            max_dd = max(max_dd, peak - equity)
         backtest.append(
             {
                 "name": name,
                 "curve": curve[-60:],
-                "total": round((equity - 1) * 100, 1),
+                "total": round(equity, 1),
+                "avgDay": round(equity / len(curve), 2),
                 "win": round(sum(1 for c in curve if c["ret"] > 0) / len(curve) * 100, 1),
                 "maxDD": round(max_dd, 1),
                 "days": len(curve),
             }
         )
 
-    # ---- 板块延续（仅东财日数据）----
+    # ---- 板块延续（用代码→行业映射，覆盖全部历史日）----
     em_days = [d for d in dates if any(e["source"] == "em" for e in days[d])]
+    sector_map: dict[str, str] = {}
+    stocks_json = DATA / "stocks.json"
+    if stocks_json.exists():
+        try:
+            for code, meta in json.loads(stocks_json.read_text(encoding="utf-8")).items():
+                if meta.get("sector"):
+                    sector_map[code] = meta["sector"]
+        except ValueError:
+            pass
+    for d in dates:
+        try:
+            payload = json.loads((DATA / f"{d}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for row in payload.get("rows", []):
+            for st in row["stocks"]:
+                if st.get("sector"):
+                    sector_map.setdefault(st["code"], st["sector"])
+
+    daily_sectors: dict[str, set[str]] = {}
+    for d in dates:
+        counts: dict[str, int] = defaultdict(int)
+        for ev in days[d]:
+            sector = sector_map.get(ev["code"])
+            if sector:
+                counts[sector] += 1
+        daily_sectors[d] = {k for k, v in counts.items() if v >= 3}
+
     sector_stats: dict[str, dict] = defaultdict(lambda: {"n": 0, "hit": 0})
-    for i, date in enumerate(em_days[:-1]):
-        payload = json.loads((DATA / f"{date}.json").read_text(encoding="utf-8"))
-        nxt = json.loads((DATA / f"{em_days[i + 1]}.json").read_text(encoding="utf-8"))
-        next_sectors = {c["name"] for c in nxt.get("sectors", [])}
-        for chip in payload.get("sectors", []):
-            if chip["count"] < 3 or chip["name"] in ("其他", "未知"):
+    for i, date in enumerate(dates[:-1]):
+        nxt = daily_sectors.get(dates[i + 1], set())
+        for name in daily_sectors.get(date, set()):
+            if name in ("其他", "未知"):
                 continue
-            slot = sector_stats[chip["name"]]
+            slot = sector_stats[name]
             slot["n"] += 1
-            if chip["name"] in next_sectors:
+            if name in nxt:
                 slot["hit"] += 1
     sector_cont = [
         {"name": k, "n": v["n"], "hit": v["hit"], "rate": round(v["hit"] / v["n"] * 100, 1)}
         for k, v in sorted(sector_stats.items(), key=lambda kv: -kv[1]["n"])
-        if v["n"] >= 2
+        if v["n"] >= 5
     ]
 
     # ---- 情绪分位 ----

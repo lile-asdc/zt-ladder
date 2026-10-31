@@ -1204,6 +1204,7 @@
     box.append(head);
     (payload.rows || []).forEach((r) => {
       const line = el("div", { class: "pt-row pt-row6" });
+      line.title = r.desc || "";
       line.append(el("span", { class: "pt-name", text: r.name }));
       line.append(el("span", { class: "pt-num", text: String(r.n) }));
       line.append(el("span", { class: "pt-num", text: `${r.win1}%` }));
@@ -1219,6 +1220,17 @@
           text: `全市场 ${payload.stocks} 只个股、${payload.from || ""} ~ ${payload.to || ""} 的日 K；超额 = 个股涨跌 − 当日上证涨跌`,
         })
       );
+    const defs = (payload.rows || []).filter((r) => r.desc);
+    if (defs.length) {
+      const details = el("details", { class: "pattern-defs" });
+      details.append(el("summary", { text: "形态定义（口语形态没有统一标准，这里是我用的口径）" }));
+      defs.forEach((r) => {
+        const p = el("p");
+        p.append(el("b", { text: `${r.name}：` }), document.createTextNode(r.desc));
+        details.append(p);
+      });
+      box.append(details);
+    }
   }
 
   function renderProb(prob) {

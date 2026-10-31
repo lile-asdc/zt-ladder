@@ -1577,3 +1577,8 @@ body:not(.view-ladder) .tools { display: none; }
 .sim-next { text-align: right; font-weight: 700; }
 .sim-next.up { color: #38d6ff; }
 .sim-next.down { color: #c98a83; }
+
+.pattern-defs { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.pattern-defs summary { cursor: pointer; color: #6d86a6; font-size: 11px; }
+.pattern-defs p { margin: 6px 0 0; font-size: 11px; color: #5b7391; line-height: 1.55; }
+.pattern-defs b { color: #8ba5c3; font-weight: 600; }

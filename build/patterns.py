@@ -27,6 +27,11 @@ PATTERNS = [
     ("三连阳", "连续 3 根阳线"),
     ("涨停后首阴", "涨停次日收阴但守住 5 日线"),
     ("均线多头", "MA5>MA10>MA20 首次成立"),
+    ("双剑合璧", "连续两根长上影、高点相近，试盘信号"),
+    ("多方炮", "阳线—缩量小阴—再放量阳线，两阳夹一阴"),
+    ("阳盖阴", "阳线实体完全包住前一根阴线实体"),
+    ("将军柱", "低位放量大阳（涨≥5%、量≥2倍）站上 20 日线"),
+    ("黄金坑", "跌破 20 日线 5% 后 5 日内快速收回"),
 ]
 
 
@@ -109,6 +114,67 @@ def evaluate(bars: list[list], idx: dict[str, float] | None = None) -> dict[tupl
             and not (prev_multi[0] > prev_multi[1] > prev_multi[2])
         ):
             matched.add("均线多头")
+
+        # ---------------- 新增五种 ----------------
+        def upper_shadow(j: int) -> float:
+            return highs[j] - max(opens[j], closes[j])
+
+        def lower_shadow(j: int) -> float:
+            return min(opens[j], closes[j]) - lows[j]
+
+        def body(j: int) -> float:
+            return abs(closes[j] - opens[j])
+
+        # 双剑合璧：连续两根长上影、高点接近
+        if (
+            upper_shadow(i) >= max(body(i) * 1.0, lower_shadow(i))
+            and upper_shadow(i - 1) >= max(body(i - 1) * 1.0, lower_shadow(i - 1))
+            and body(i) > 0
+            and body(i - 1) > 0
+            and abs(highs[i] - highs[i - 1]) / max(highs[i], 1e-9) < 0.03
+        ):
+            matched.add("双剑合璧")
+
+        # 多方炮：阳—缩量小阴—放量阳，第三根收盘创新高
+        if (
+            closes[i - 2] > opens[i - 2]
+            and (closes[i - 2] / opens[i - 2] - 1) >= 0.02
+            and closes[i - 1] < opens[i - 1]
+            and body(i - 1) / max(closes[i - 2], 1e-9) <= 0.015
+            and vols[i - 1] < vols[i - 2]
+            and closes[i] > opens[i]
+            and closes[i] > closes[i - 2]
+            and vols[i] > vols[i - 1]
+        ):
+            matched.add("多方炮")
+
+        # 阳盖阴：阳线实体包住前一根阴线实体
+        if (
+            closes[i - 1] < opens[i - 1]
+            and closes[i] > opens[i]
+            and closes[i] >= opens[i - 1]
+            and opens[i] <= closes[i - 1]
+        ):
+            matched.add("阳盖阴")
+
+        # 将军柱：放量大阳站上 20 日线
+        pct_today = (closes[i] / closes[i - 1] - 1) * 100 if closes[i - 1] else 0
+        if (
+            pct_today >= 5
+            and prev_vol
+            and vols[i] >= prev_vol * 2
+            and closes[i] > ma20
+            and closes[i - 1] <= ma20
+        ):
+            matched.add("将军柱")
+
+        # 黄金坑：近 5 日曾深跌破 20 日线，今日收回
+        if closes[i] > ma20 and closes[i] > closes[i - 1]:
+            for j in range(max(20, i - 5), i):
+                mj = _ma(closes, j, 20)
+                if mj and closes[j] < mj * 0.95:
+                    matched.add("黄金坑")
+                    break
 
         if not matched:
             continue
